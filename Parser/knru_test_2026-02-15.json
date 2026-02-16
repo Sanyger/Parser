@@ -1,0 +1,218 @@
+[
+  {
+    "deal_type": "sale",
+    "title": "25 Октября пр-кт, 37а",
+    "address": "25 Октября пр-кт, 37а",
+    "district": "Гатчинский муниципальный район",
+    "price_rub": 10000000,
+    "area_m2": 230,
+    "url": "https://knru.ru/catalog/25-oktyabrya-pr-kt-37a/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Северный пр-кт, 115",
+    "address": "Северный пр-кт, 115",
+    "district": "Красногвардейский",
+    "price_rub": 29900000,
+    "area_m2": 91.2,
+    "url": "https://knru.ru/catalog/severnyy-pr-ruchi/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Отдыха ул, 6 А",
+    "address": "Отдыха ул, 6 А",
+    "district": "Курортный",
+    "price_rub": 1700000000,
+    "area_m2": 26647,
+    "url": "https://knru.ru/catalog/otdykha-ul-6-a/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Фёдора Абрамова, 18к1",
+    "address": "Фёдора Абрамова, 18к1",
+    "district": "Выборгский",
+    "price_rub": 10450000,
+    "area_m2": 20,
+    "url": "https://knru.ru/catalog/ul-fedora-abramova-d-18-k-1/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Костюшко ул, 38",
+    "address": "Костюшко ул, 38",
+    "district": "Московский",
+    "price_rub": 16900000,
+    "area_m2": 56,
+    "url": "https://knru.ru/catalog/kostyushko-ul-38/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "13-я В.О. линия, 50",
+    "address": "13-я В.О. линия, 50",
+    "district": "Василеостровский",
+    "price_rub": 482196523,
+    "area_m2": 1000,
+    "url": "https://knru.ru/catalog/13-ya-v-o-liniya-50/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Московский пр-кт, 73к3 А",
+    "address": "Московский пр-кт, 73к3 А",
+    "district": "Адмиралтейский",
+    "price_rub": 8500000,
+    "area_m2": 299,
+    "url": "https://knru.ru/catalog/moskovskiy-pr-d-73-k-3-1407189380/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Леонова ул, 5",
+    "address": "Леонова ул, 5",
+    "district": "Чкаловский",
+    "price_rub": 77700000,
+    "area_m2": 707,
+    "url": "https://knru.ru/catalog/zamyatin-per-d-5/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Лиговский пр-кт, 56Б",
+    "address": "Лиговский пр-кт, 56Б",
+    "district": "Центральный",
+    "price_rub": 21525000,
+    "area_m2": 86.1,
+    "url": "https://knru.ru/catalog/ligovskiy-pr-d-56-1545894825/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Лиговский пр-кт, 56Б",
+    "address": "Лиговский пр-кт, 56Б",
+    "district": "Центральный",
+    "price_rub": 14962500,
+    "area_m2": 52.5,
+    "url": "https://knru.ru/catalog/ligovskiy-pr-d-56-414833084/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Лиговский пр-кт, 56Б",
+    "address": "Лиговский пр-кт, 56Б",
+    "district": "Центральный",
+    "price_rub": 20675000,
+    "area_m2": 82.7,
+    "url": "https://knru.ru/catalog/ligovskiy-pr-d-56/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Маршала Блюхера пр-кт, 74к2 стр 1",
+    "address": "Маршала Блюхера пр-кт, 74к2 стр 1",
+    "district": null,
+    "price_rub": 283680000,
+    "area_m2": 2364,
+    "url": "https://knru.ru/catalog/marshala-blyukhera-pr-kt-74k2-str-1/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Есенина ул, 8к1",
+    "address": "Есенина ул, 8к1",
+    "district": "Выборгский",
+    "price_rub": 10000000,
+    "area_m2": 27,
+    "url": "https://knru.ru/catalog/esenina-ul-8k1/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "проспект Будённого, 18к4",
+    "address": "проспект Будённого, 18к4",
+    "district": "Петродворцовый",
+    "price_rub": 80520000,
+    "area_m2": 244,
+    "url": "https://knru.ru/catalog/prospekt-budyennogo-18k4-60966936/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "проспект Будённого, 18к4",
+    "address": "проспект Будённого, 18к4",
+    "district": "Петродворцовый",
+    "price_rub": 32550000,
+    "area_m2": 93,
+    "url": "https://knru.ru/catalog/prospekt-budyennogo-18k4/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Чайковского ул, 12а Л",
+    "address": "Чайковского ул, 12а Л",
+    "district": "Центральный",
+    "price_rub": 175000000,
+    "area_m2": 724,
+    "url": "https://knru.ru/catalog/chaykovskogo-ul-12a-l-468742874/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Чайковского ул, 12а Л",
+    "address": "Чайковского ул, 12а Л",
+    "district": "Центральный",
+    "price_rub": 41000000,
+    "area_m2": 192,
+    "url": "https://knru.ru/catalog/chaykovskogo-ul-12a-l/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Московский пр-кт, 20",
+    "address": "Московский пр-кт, 20",
+    "district": "Адмиралтейский",
+    "price_rub": 10500000,
+    "area_m2": 48,
+    "url": "https://knru.ru/catalog/moskovskiy-pr-d-20/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Науки пр-кт, 16к1",
+    "address": "Науки пр-кт, 16к1",
+    "district": "Калининский",
+    "price_rub": 350000000,
+    "area_m2": 701,
+    "url": "https://knru.ru/catalog/pr-nauki-d-16-k-1/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Гражданский пр-кт, 113к3",
+    "address": "Гражданский пр-кт, 113к3",
+    "district": "Калининский",
+    "price_rub": 24500000,
+    "area_m2": 73.9,
+    "url": "https://knru.ru/catalog/grazhdanskiy-pr-kt-113k3-1951564805/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Гражданский пр-кт, 113к3",
+    "address": "Гражданский пр-кт, 113к3",
+    "district": "Калининский",
+    "price_rub": 15400000,
+    "area_m2": 48.4,
+    "url": "https://knru.ru/catalog/grazhdanskiy-pr-kt-113k3-1322926956/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Гражданский пр-кт, 113к3",
+    "address": "Гражданский пр-кт, 113к3",
+    "district": "Калининский",
+    "price_rub": 10300000,
+    "area_m2": 24,
+    "url": "https://knru.ru/catalog/grazhdanskiy-pr-kt-113k3-1720420455/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Гражданский пр-кт, 113к3",
+    "address": "Гражданский пр-кт, 113к3",
+    "district": "Калининский",
+    "price_rub": 10300000,
+    "area_m2": 25.5,
+    "url": "https://knru.ru/catalog/grazhdanskiy-pr-kt-113k3/"
+  },
+  {
+    "deal_type": "sale",
+    "title": "Каменноостровский пр-кт, 11 А",
+    "address": "Каменноостровский пр-кт, 11 А",
+    "district": "Петроградский",
+    "price_rub": 450000000,
+    "area_m2": 1178,
+    "url": "https://knru.ru/catalog/kamennoostrovskiy-pr-kt-d-11/"
+  }
+]
