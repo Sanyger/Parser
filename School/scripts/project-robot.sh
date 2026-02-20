@@ -22,7 +22,7 @@ get_local_ip() {
 
 start_expo() {
   local mode="$1"
-  CI=1 npx expo start --"$mode" --port "$PORT" >"$LOG_FILE" 2>&1 &
+  EXPO_NO_TELEMETRY=1 npx expo start --"$mode" --port "$PORT" >"$LOG_FILE" 2>&1 &
   local pid="$!"
   echo "$pid" > "$PID_FILE"
   echo "Started Expo ($mode) (pid=$pid), waiting..."
