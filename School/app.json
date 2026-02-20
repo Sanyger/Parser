@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "School Israel MVP",
+    "slug": "school-israel-mvp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-notifications"
+    ]
+  }
+}
