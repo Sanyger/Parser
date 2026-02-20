@@ -5,7 +5,7 @@ import { HomeworkList } from '../components/HomeworkList';
 import { ScheduleWeekView } from '../components/ScheduleWeekView';
 import { SectionCard } from '../components/SectionCard';
 import { ThreadChat } from '../components/ThreadChat';
-import { isRtlLanguage, t } from '../lib/i18n';
+import { isRtlLanguage, localizeLessonReason, localizeLessonSubject, t } from '../lib/i18n';
 import { childUsers, threadTitle } from '../lib/selectors';
 import { formatDate, formatTime } from '../lib/time';
 import { DatabaseSnapshot, Thread, User } from '../types/models';
@@ -220,7 +220,7 @@ export function ParentScreen({
             language={language}
             onSelectLesson={(lesson) => {
               Alert.alert(
-                lesson.subject,
+                localizeLessonSubject(lesson.subject, language),
                 `${t(language, {
                   ru: 'Время',
                   en: 'Time',
@@ -229,7 +229,7 @@ export function ParentScreen({
                   ru: 'Причина',
                   en: 'Reason',
                   he: 'סיבה',
-                })}: ${lesson.change_reason ?? '—'}`,
+                })}: ${localizeLessonReason(lesson.change_reason, language) || '—'}`,
               );
             }}
           />
@@ -338,7 +338,7 @@ export function ParentScreen({
                   ]}
                 >
                   {formatDate(lesson.start_datetime, language)} {formatTime(lesson.start_datetime, language)}{' '}
-                  {lesson.subject}
+                  {localizeLessonSubject(lesson.subject, language)}
                 </Text>
               </Pressable>
             ))}

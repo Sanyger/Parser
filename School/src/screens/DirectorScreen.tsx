@@ -6,6 +6,7 @@ import { effectiveRoleId } from '../components/RoleLabel';
 import {
   feedbackStatusName,
   isRtlLanguage,
+  localizeLessonSubject,
   roleCompactNameById,
   roleNameById,
   t,
@@ -129,9 +130,9 @@ export function DirectorScreen({
         he: 'המערכת עודכנה',
       }),
       t(language, {
-        ru: `Урок ${baseLesson.subject} в ${formatTime(baseLesson.start_datetime, language)} был обновлён.`,
-        en: `Lesson ${baseLesson.subject} at ${formatTime(baseLesson.start_datetime, language)} was updated.`,
-        he: `השיעור ${baseLesson.subject} בשעה ${formatTime(baseLesson.start_datetime, language)} עודכן.`,
+        ru: `Урок ${localizeLessonSubject(baseLesson.subject, language)} в ${formatTime(baseLesson.start_datetime, language)} был обновлён.`,
+        en: `Lesson ${localizeLessonSubject(baseLesson.subject, language)} at ${formatTime(baseLesson.start_datetime, language)} was updated.`,
+        he: `השיעור ${localizeLessonSubject(baseLesson.subject, language)} בשעה ${formatTime(baseLesson.start_datetime, language)} עודכן.`,
       }),
     );
   };

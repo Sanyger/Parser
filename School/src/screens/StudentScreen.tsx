@@ -4,7 +4,7 @@ import { HomeworkList } from '../components/HomeworkList';
 import { ScheduleWeekView } from '../components/ScheduleWeekView';
 import { SectionCard } from '../components/SectionCard';
 import { ThreadChat } from '../components/ThreadChat';
-import { isRtlLanguage, t } from '../lib/i18n';
+import { isRtlLanguage, localizeLessonReason, localizeLessonSubject, t } from '../lib/i18n';
 import { announcementThreads, lessonsForUser, threadTitle } from '../lib/selectors';
 import { formatDate, formatTime } from '../lib/time';
 import { DatabaseSnapshot, Thread, User } from '../types/models';
@@ -106,7 +106,7 @@ export function StudentScreen({
             language={language}
             onSelectLesson={(lesson) => {
               Alert.alert(
-                lesson.subject,
+                localizeLessonSubject(lesson.subject, language),
                 `${t(language, {
                   ru: 'Время',
                   en: 'Time',
@@ -115,7 +115,7 @@ export function StudentScreen({
                   ru: 'Причина',
                   en: 'Reason',
                   he: 'סיבה',
-                })}: ${lesson.change_reason ?? '—'}`,
+                })}: ${localizeLessonReason(lesson.change_reason, language) || '—'}`,
               );
             }}
           />

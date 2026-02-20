@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { isRtlLanguage, t } from '../lib/i18n';
+import { isRtlLanguage, localizeLessonSubject, t } from '../lib/i18n';
 import { formatDate } from '../lib/time';
 import { AppLanguage, Homework, Lesson } from '../types/models';
 
@@ -46,7 +46,7 @@ export function HomeworkList({ homework, lessons, language, editable, onEdit }: 
               <Text style={[styles.text, rtl && styles.textRtl]}>{item.text}</Text>
               <Text style={[styles.meta, rtl && styles.textRtl]}>
                 {lesson
-                  ? `${lesson.subject} · ${formatDate(lesson.start_datetime, language)}`
+                  ? `${localizeLessonSubject(lesson.subject, language)} · ${formatDate(lesson.start_datetime, language)}`
                   : t(language, {
                       ru: 'Неизвестный урок',
                       en: 'Unknown lesson',

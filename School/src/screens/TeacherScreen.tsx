@@ -5,7 +5,7 @@ import { HomeworkList } from '../components/HomeworkList';
 import { ScheduleWeekView } from '../components/ScheduleWeekView';
 import { SectionCard } from '../components/SectionCard';
 import { ThreadChat } from '../components/ThreadChat';
-import { isRtlLanguage, t } from '../lib/i18n';
+import { isRtlLanguage, localizeLessonReason, localizeLessonRoom, localizeLessonSubject, t } from '../lib/i18n';
 import {
   currentLesson,
   latestIncomingCount,
@@ -227,7 +227,7 @@ export function TeacherScreen({
       >
         {activeLesson ? (
           <Text style={[styles.primaryText, rtl && styles.textRtl]}>
-            {activeLesson.subject} · {formatTime(activeLesson.start_datetime, language)}-
+            {localizeLessonSubject(activeLesson.subject, language)} · {formatTime(activeLesson.start_datetime, language)}-
             {formatTime(activeLesson.end_datetime, language)}
           </Text>
         ) : (
@@ -259,7 +259,7 @@ export function TeacherScreen({
         ) : (
           todaysLessons.map((lesson) => (
             <Text key={lesson.id} style={[styles.primaryText, rtl && styles.textRtl]}>
-              {formatTime(lesson.start_datetime, language)} {lesson.subject} ({lesson.room})
+              {formatTime(lesson.start_datetime, language)} {localizeLessonSubject(lesson.subject, language)} ({localizeLessonRoom(lesson.room, language)})
             </Text>
           ))
         )}
@@ -288,7 +288,7 @@ export function TeacherScreen({
             return (
               <View key={lesson.id} style={styles.feedbackItem}>
                 <Text style={[styles.primaryText, rtl && styles.textRtl]}>
-                  {lesson.subject} ({formatTime(lesson.start_datetime, language)})
+                  {localizeLessonSubject(lesson.subject, language)} ({formatTime(lesson.start_datetime, language)})
                 </Text>
                 <Text style={[styles.secondaryText, rtl && styles.textRtl]}>
                   {lessonStudents.map((student) => student.name).join(', ') ||
@@ -390,16 +390,16 @@ export function TeacherScreen({
         language={language}
         onSelectLesson={(lesson) => {
           Alert.alert(
-            lesson.subject,
+            localizeLessonSubject(lesson.subject, language),
             `${t(language, {
               ru: 'Кабинет',
               en: 'Room',
               he: 'כיתה',
-            })}: ${lesson.room}\n${formatDate(lesson.start_datetime, language)} ${formatTime(lesson.start_datetime, language)}-${formatTime(lesson.end_datetime, language)}\n${t(language, {
+            })}: ${localizeLessonRoom(lesson.room, language)}\n${formatDate(lesson.start_datetime, language)} ${formatTime(lesson.start_datetime, language)}-${formatTime(lesson.end_datetime, language)}\n${t(language, {
               ru: 'Причина',
               en: 'Reason',
               he: 'סיבה',
-            })}: ${lesson.change_reason ?? '—'}`,
+            })}: ${localizeLessonReason(lesson.change_reason, language) || '—'}`,
           );
         }}
       />
@@ -492,10 +492,10 @@ export function TeacherScreen({
                   selectedLessonId === lesson.id && styles.lessonPickTextActive,
                   rtl && styles.textRtl,
                 ]}
-              >
-                {formatDate(lesson.start_datetime, language)} {formatTime(lesson.start_datetime, language)}{' '}
-                {lesson.subject}
-              </Text>
+                >
+                  {formatDate(lesson.start_datetime, language)} {formatTime(lesson.start_datetime, language)}{' '}
+                  {localizeLessonSubject(lesson.subject, language)}
+                </Text>
             </Pressable>
           ))}
         </View>

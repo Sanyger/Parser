@@ -1,6 +1,14 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { isRtlLanguage, lessonTypeName, t, weekDayName } from '../lib/i18n';
+import {
+  isRtlLanguage,
+  lessonTypeName,
+  localizeLessonReason,
+  localizeLessonRoom,
+  localizeLessonSubject,
+  t,
+  weekDayName,
+} from '../lib/i18n';
 import { getDayIndexInJerusalem, formatDate, formatTime, WEEK_DAYS } from '../lib/time';
 import { AppLanguage, Lesson } from '../types/models';
 
@@ -105,7 +113,7 @@ export function ScheduleWeekView({ lessons, language, onSelectLesson }: Schedule
                       >
                         <Text style={styles.rangeText}>{lessonRange(lesson, language)}</Text>
                         <Text style={styles.lessonCanceledText}>
-                          {lesson.subject} ({lesson.room})
+                          {localizeLessonSubject(lesson.subject, language)} ({localizeLessonRoom(lesson.room, language)})
                         </Text>
                         <Text style={styles.arrowText}>
                           {t(language, {
@@ -115,9 +123,11 @@ export function ScheduleWeekView({ lessons, language, onSelectLesson }: Schedule
                           })}
                         </Text>
                         <Text style={styles.lessonChangedText}>
-                          {replacement.subject} ({replacement.room})
+                          {localizeLessonSubject(replacement.subject, language)} ({localizeLessonRoom(replacement.room, language)})
                         </Text>
-                        <Text style={styles.reasonText}>{replacement.change_reason ?? ''}</Text>
+                        <Text style={styles.reasonText}>
+                          {localizeLessonReason(replacement.change_reason, language)}
+                        </Text>
                       </Pressable>
                     );
                   }
@@ -131,7 +141,7 @@ export function ScheduleWeekView({ lessons, language, onSelectLesson }: Schedule
                   >
                     <Text style={styles.rangeText}>{lessonRange(lesson, language)}</Text>
                     <Text style={styles.lessonText}>
-                      {lesson.subject} ({lesson.room})
+                      {localizeLessonSubject(lesson.subject, language)} ({localizeLessonRoom(lesson.room, language)})
                     </Text>
                     {lesson.type !== 'lesson' ? (
                       <Text style={styles.typeChip}>{lessonTypeName(lesson.type, language)}</Text>
