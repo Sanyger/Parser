@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { isRtlLanguage, localizeLessonSubject, t } from '../lib/i18n';
 import { formatDate } from '../lib/time';
+import { ensureTranslationMap, getLocalizedText } from '../lib/translation';
 import { AppLanguage, Homework, Lesson } from '../types/models';
 
 interface HomeworkListProps {
@@ -36,6 +37,13 @@ export function HomeworkList({ homework, lessons, language, editable, onEdit }: 
         .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
         .map((item) => {
           const lesson = lessonsById.get(item.lesson_id);
+          const textOriginal = item.text_original ?? item.text;
+          const text = getLocalizedText(
+            textOriginal,
+            ensureTranslationMap(textOriginal, item.lang_original, item.translations),
+            language,
+            false,
+          );
           return (
             <Pressable
               key={item.id}
@@ -43,7 +51,7 @@ export function HomeworkList({ homework, lessons, language, editable, onEdit }: 
               onPress={() => onEdit?.(item)}
               style={[styles.item, editable && styles.editableItem]}
             >
-              <Text style={[styles.text, rtl && styles.textRtl]}>{item.text}</Text>
+              <Text style={[styles.text, rtl && styles.textRtl]}>{text}</Text>
               <Text style={[styles.meta, rtl && styles.textRtl]}>
                 {lesson
                   ? `${localizeLessonSubject(lesson.subject, language)} · ${formatDate(lesson.start_datetime, language)}`
