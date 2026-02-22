@@ -118,6 +118,20 @@ function ensureDatabaseShape(): void {
     schoolThread.participants.push('user_student_2');
   }
 
+  const legacyDemoTexts = new Set([
+    'Здравствуйте, Марк будет отсутствовать на первом уроке завтра.',
+    'Спасибо за уведомление. Отметила в журнале.',
+    'Добро пожаловать в новый школьный сервис-прототип.',
+  ]);
+  const hasLegacyDemoMessages = database.messages.some((entry) => {
+    const text = (entry.text_original ?? '').trim();
+    return entry.id.startsWith('msg_') || legacyDemoTexts.has(text);
+  });
+  if (hasLegacyDemoMessages) {
+    // Wipe legacy demo/test chat history so users start with clean real dialogs.
+    database.messages = [];
+  }
+
   database.users.forEach((entry) => {
     if (entry.role_id !== 5) {
       return;
@@ -131,7 +145,7 @@ function ensureDatabaseShape(): void {
 
   database.messages = database.messages.map((entry) => {
     const textOriginal = (entry.text_original ?? '').trim();
-    const langOriginal = entry.lang_original ?? detectLanguage(textOriginal);
+    const langOriginal = detectLanguage(textOriginal);
     return {
       ...entry,
       text_original: textOriginal,
@@ -142,7 +156,7 @@ function ensureDatabaseShape(): void {
 
   database.homework = database.homework.map((entry) => {
     const textOriginal = (entry.text_original ?? entry.text ?? '').trim();
-    const langOriginal = entry.lang_original ?? detectLanguage(textOriginal);
+    const langOriginal = detectLanguage(textOriginal);
     return {
       ...entry,
       text: textOriginal,
@@ -154,7 +168,7 @@ function ensureDatabaseShape(): void {
 
   database.feedback = database.feedback.map((entry) => {
     const textOriginal = (entry.text_original ?? '').trim();
-    const langOriginal = entry.lang_original ?? detectLanguage(textOriginal);
+    const langOriginal = detectLanguage(textOriginal);
     const author = database.users.find((candidate) => candidate.id === entry.author_id);
     const classId = typeof entry.class_id !== 'undefined' ? entry.class_id : author?.class_ids[0] ?? null;
     return {
@@ -948,8 +962,21 @@ export async function getStudentDetails(
 
   const classId = student.class_ids[0] ?? '';
   const className = classId
-    ? database.classes.find((entry) => entry.id === classId)?.name ?? classId
-    : 'Без класса';
+    ? (() => {
+        const classModel = database.classes.find((entry) => entry.id === classId);
+        if (!classModel) {
+          return classId;
+        }
+        return classModel.name_i18n?.[viewer.preferred_language] ?? classModel.name;
+      })()
+    : localizeTextForUser(
+        viewer,
+        viewer.preferred_language === 'he'
+          ? 'ללא כיתה'
+          : viewer.preferred_language === 'en'
+            ? 'No class'
+            : 'Без класса',
+      );
 
   const todayInput = toJerusalemDateInput(new Date().toISOString());
   const todayLessonIds = new Set(

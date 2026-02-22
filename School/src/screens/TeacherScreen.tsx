@@ -1,5 +1,6 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -17,6 +18,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -30,13 +32,14 @@ import {
   lessonsForUser,
   todayLessons,
 } from '../lib/selectors';
+import { t } from '../lib/i18n';
 import {
   fromJerusalemDateTime,
   getDayIndexInJerusalem,
   toJerusalemDateInput,
   toJerusalemTimeInput,
 } from '../lib/time';
-import { ensureTranslationMap, getLocalizedText } from '../lib/translation';
+import { ensureTranslationMap, getLocalizedText, localizePersonName } from '../lib/translation';
 import {
   DatabaseSnapshot,
   Feedback,
@@ -189,23 +192,17 @@ function className(snapshot: DatabaseSnapshot, classId: string): string {
   return snapshot.classes.find((entry) => entry.id === classId)?.name ?? classId;
 }
 
-function formatHeaderDate(date: Date): string {
-  const value = new Intl.DateTimeFormat('ru-RU', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(date);
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function parentRelationLabel(relation: 'mother' | 'father' | 'guardian'): string {
+function parentRelationLabel(
+  relation: 'mother' | 'father' | 'guardian',
+  language: User['preferred_language'],
+): string {
   if (relation === 'mother') {
-    return 'Мама';
+    return t(language, { ru: 'Мама', en: 'Mother', he: 'אמא' });
   }
   if (relation === 'father') {
-    return 'Папа';
+    return t(language, { ru: 'Папа', en: 'Father', he: 'אבא' });
   }
-  return 'Опекун';
+  return t(language, { ru: 'Опекун', en: 'Guardian', he: 'אפוטרופוס' });
 }
 
 function feedbackStatusToSuggestionStatus(status: Feedback['status']): SuggestionStatus {
@@ -506,6 +503,29 @@ function monthLabelFromCursor(cursor: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function monthNameFromCursor(cursor: string): string {
+  const match = cursor.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return cursor;
+  }
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const date = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0));
+  const value = new Intl.DateTimeFormat('ru-RU', {
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(date);
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function yearFromCursor(cursor: string): number {
+  const match = cursor.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return new Date().getFullYear();
+  }
+  return Number.parseInt(match[1], 10);
+}
+
 function schoolCalendarRangeForDate(dateInput: string): SchoolCalendarRange | null {
   const found = SCHOOL_CALENDAR_RANGES.find(
     (range) => dateInput >= range.startInput && dateInput <= range.endInput,
@@ -743,8 +763,9 @@ export function TeacherScreen({
   const [scheduleMonthCursor, setScheduleMonthCursor] = useState<string>(
     monthCursorFromDateInput(initialScheduleDateInput),
   );
-  const [rangePickerVisible, setRangePickerVisible] = useState(false);
-  const [selectedRange, setSelectedRange] = useState<{ startInput: string; endInput: string } | null>(null);
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
+  const [yearPickerVisible, setYearPickerVisible] = useState(false);
 
   const [addLessonVisible, setAddLessonVisible] = useState(false);
   const [lessonActionsVisible, setLessonActionsVisible] = useState(false);
@@ -781,6 +802,11 @@ export function TeacherScreen({
   const [lessonSummaryDraft, setLessonSummaryDraft] = useState('');
   const [lessonSummarySaving, setLessonSummarySaving] = useState(false);
   const [lessonDeleting, setLessonDeleting] = useState(false);
+
+  const contentScrollY = useRef(new Animated.Value(0)).current;
+  const headerTopInset = Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0;
+  const headerMaxHeight = 124 + headerTopInset;
+  const headerMinHeight = 94 + headerTopInset;
 
   const [homeworkDraftText, setHomeworkDraftText] = useState('');
   const [editingHomeworkId, setEditingHomeworkId] = useState<string | undefined>(undefined);
@@ -1120,25 +1146,31 @@ export function TeacherScreen({
 
   const monthStartInput = useMemo(() => `${scheduleMonthCursor}-01`, [scheduleMonthCursor]);
   const monthEndInput = useMemo(() => endOfMonthDateInput(scheduleMonthCursor), [scheduleMonthCursor]);
-
-  const visibleRange = selectedRange ?? {
-    startInput: monthStartInput,
-    endInput: monthEndInput,
-  };
-
-  const monthPickerOptions = useMemo(
+  const scheduleWeekStartInput = useMemo(
+    () => addDaysToDateInput(selectedScheduleDateInput, -dayIndexFromDateInput(selectedScheduleDateInput)),
+    [selectedScheduleDateInput],
+  );
+  const scheduleFiveDayStartInput = useMemo(() => {
+    const selectedDayIndex = dayIndexFromDateInput(selectedScheduleDateInput);
+    const shiftFromWeekStart = Math.max(0, selectedDayIndex - 4);
+    return addDaysToDateInput(scheduleWeekStartInput, shiftFromWeekStart);
+  }, [scheduleWeekStartInput, selectedScheduleDateInput]);
+  const fiveDayScheduleInputs = useMemo(
+    () => Array.from({ length: 5 }, (_, index) => addDaysToDateInput(scheduleFiveDayStartInput, index)),
+    [scheduleFiveDayStartInput],
+  );
+  const visibleRange = useMemo(
     () =>
-      Array.from({ length: 17 }, (_, index) => {
-        const cursor = shiftMonthCursor(scheduleMonthCursor, index - 8);
-        const startInput = `${cursor}-01`;
-        const endInput = endOfMonthDateInput(cursor);
-        return {
-          cursor,
-          startInput,
-          endInput,
-        };
-      }),
-    [scheduleMonthCursor],
+      calendarExpanded
+        ? { startInput: monthStartInput, endInput: monthEndInput }
+        : {
+            startInput: fiveDayScheduleInputs[0] ?? selectedScheduleDateInput,
+            endInput:
+              fiveDayScheduleInputs[fiveDayScheduleInputs.length - 1] ??
+              fiveDayScheduleInputs[0] ??
+              selectedScheduleDateInput,
+          },
+    [calendarExpanded, fiveDayScheduleInputs, monthEndInput, monthStartInput, selectedScheduleDateInput],
   );
 
   const scheduleMonthCells = useMemo(
@@ -1150,6 +1182,18 @@ export function TeacherScreen({
     () => monthLabelFromCursor(scheduleMonthCursor),
     [scheduleMonthCursor],
   );
+  const scheduleMonthName = useMemo(
+    () => monthNameFromCursor(scheduleMonthCursor),
+    [scheduleMonthCursor],
+  );
+  const scheduleYearValue = useMemo(
+    () => yearFromCursor(scheduleMonthCursor),
+    [scheduleMonthCursor],
+  );
+  const scheduleYearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 21 }, (_, index) => currentYear - 10 + index);
+  }, []);
 
   const selectedDayDateInput = selectedScheduleDateInput;
   const selectedDayLessons = lessonsByDate.get(selectedDayDateInput) ?? [];
@@ -1499,7 +1543,7 @@ export function TeacherScreen({
       return;
     }
     const todayInput = toJerusalemDateInput(new Date().toISOString());
-    setSelectedRange(null);
+    setCalendarExpanded(false);
     setSelectedScheduleDateInput(todayInput);
     setScheduleMonthCursor(monthCursorFromDateInput(todayInput));
   }, [tab]);
@@ -1590,7 +1634,6 @@ export function TeacherScreen({
   const openNewLessonModal = () => {
     const targetDateInput = selectedScheduleDateInput || toJerusalemDateInput(new Date().toISOString());
     const targetDay = dayIndexFromDateInput(targetDateInput);
-    setSelectedRange(null);
     setDraft((current) => {
       const base = emptyLessonDraft(user.class_ids[0] ?? '');
       const firstSubject = subjects[0] ?? '';
@@ -1610,7 +1653,6 @@ export function TeacherScreen({
   const openNewEventModal = () => {
     const targetDateInput = selectedScheduleDateInput || toJerusalemDateInput(new Date().toISOString());
     const targetDay = dayIndexFromDateInput(targetDateInput);
-    setSelectedRange(null);
     setDraft((current) => {
       const base = emptyLessonDraft(user.class_ids[0] ?? '');
       return {
@@ -1629,7 +1671,6 @@ export function TeacherScreen({
   const openNewHolidayModal = () => {
     const targetDateInput = selectedScheduleDateInput || toJerusalemDateInput(new Date().toISOString());
     const targetDay = dayIndexFromDateInput(targetDateInput);
-    setSelectedRange(null);
     setDraft((current) => {
       const base = emptyLessonDraft(user.class_ids[0] ?? '');
       return {
@@ -1678,15 +1719,38 @@ export function TeacherScreen({
     const nextCursor = shiftMonthCursor(scheduleMonthCursor, direction);
     setScheduleMonthCursor(nextCursor);
     const nextDateInput = `${nextCursor}-01`;
-    setSelectedRange({
-      startInput: `${nextCursor}-01`,
-      endInput: endOfMonthDateInput(nextCursor),
-    });
     setSelectedScheduleDateInput(nextDateInput);
   };
 
+  const navigateWeek = (direction: -1 | 1) => {
+    const nextWeekStart = addDaysToDateInput(scheduleWeekStartInput, direction * 7);
+    setSelectedScheduleDateInput(nextWeekStart);
+    setScheduleMonthCursor(monthCursorFromDateInput(nextWeekStart));
+  };
+
   const openRangePicker = () => {
-    setRangePickerVisible(true);
+    setCalendarExpanded((current) => {
+      const next = !current;
+      if (next) {
+        setScheduleMonthCursor(monthCursorFromDateInput(selectedScheduleDateInput));
+      }
+      return next;
+    });
+  };
+
+  const selectScheduleMonth = (monthValue: number) => {
+    const cursor = `${scheduleYearValue}-${String(monthValue).padStart(2, '0')}`;
+    setScheduleMonthCursor(cursor);
+    setSelectedScheduleDateInput(`${cursor}-01`);
+    setMonthPickerVisible(false);
+  };
+
+  const selectScheduleYear = (yearValue: number) => {
+    const monthPart = scheduleMonthCursor.slice(5, 7);
+    const cursor = `${String(yearValue).padStart(4, '0')}-${monthPart}`;
+    setScheduleMonthCursor(cursor);
+    setSelectedScheduleDateInput(`${cursor}-01`);
+    setYearPickerVisible(false);
   };
 
   const queueClassNotifications = (_classId: string, _text: string) => {};
@@ -3444,46 +3508,15 @@ export function TeacherScreen({
 
   const renderDashboard = () => (
     <>
-      <LinearGradient
-        colors={[COLORS.gradientFrom, COLORS.gradientTo]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.headerGradient}
-      >
-        <View style={styles.headerTopRow}>
-          <Text style={styles.headerDate}>{formatHeaderDate(new Date())}</Text>
-          <Pressable style={styles.notificationsButton} onPress={() => setTab('tasks')}>
-            <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
-            {messagesForBadge > 0 ? (
-              <View style={styles.notificationsBadge}>
-                <Text style={styles.notificationsBadgeText}>{messagesForBadge}</Text>
-              </View>
-            ) : null}
-          </Pressable>
-        </View>
-        <View style={styles.headerIdentityRow}>
-          <Pressable style={styles.headerAvatarTapArea} onPress={() => void pickProfilePhoto()}>
-            {user.photo_uri ? (
-              <Image source={{ uri: user.photo_uri }} style={styles.headerAvatarImage} />
-            ) : (
-              <View style={styles.headerAvatarFallback}>
-                <Text style={styles.headerAvatarFallbackText}>{user.name.charAt(0).toUpperCase()}</Text>
-              </View>
-            )}
-          </Pressable>
-          <Text style={styles.headerUserName}>{user.name}</Text>
-          <View style={styles.headerRoleBadge}>
-            <Text style={styles.headerRoleText}>Учитель</Text>
-          </View>
-        </View>
-      </LinearGradient>
-
       {featuredParentMessage ? (
         <View style={styles.importantCard}>
           <View style={styles.parentMessageHeader}>
             <Text style={styles.parentMessageTitle} numberOfLines={1}>
-              Родитель {featuredParentMessage.senderName}
-              {featuredParentMessage.childName ? ` (${featuredParentMessage.childName})` : ''}
+              {t(language, { ru: 'Родитель', en: 'Parent', he: 'הורה' })}{' '}
+              {localizePersonName(featuredParentMessage.senderName, language)}
+              {featuredParentMessage.childName
+                ? ` (${localizePersonName(featuredParentMessage.childName, language)})`
+                : ''}
             </Text>
             {messagesForBadge > 0 ? <View style={styles.importantMessagesDot} /> : null}
           </View>
@@ -3694,7 +3727,7 @@ export function TeacherScreen({
         <Text style={styles.sectionTitle}>Расписание</Text>
         <View style={styles.scheduleHeaderActions}>
           <Pressable style={styles.calendarButton} onPress={openRangePicker}>
-            <Ionicons name="calendar-outline" size={16} color="#fff" />
+            <Ionicons name={calendarExpanded ? 'calendar' : 'calendar-outline'} size={16} color="#fff" />
           </Pressable>
           <Pressable style={styles.addLessonButton} onPress={openNewLessonModal}>
             <Ionicons name="add" size={16} color="#fff" />
@@ -3713,106 +3746,179 @@ export function TeacherScreen({
         <Pressable
           style={styles.weekNavButton}
           onPress={() => {
-            navigateMonth(-1);
+            if (calendarExpanded) {
+              navigateMonth(-1);
+            } else {
+              navigateWeek(-1);
+            }
           }}
         >
           <Ionicons name="chevron-back" size={16} color={COLORS.textMain} />
-          <Text style={styles.weekNavButtonText}>Месяц назад</Text>
+          <Text style={styles.weekNavButtonText}>{calendarExpanded ? 'Месяц назад' : 'Неделя назад'}</Text>
         </Pressable>
 
-        <Text style={styles.weekNavCenterText}>{scheduleMonthLabel}</Text>
+        <Text style={styles.weekNavCenterText}>
+          {calendarExpanded ? scheduleMonthLabel : `Неделя ${dateInputLabel(visibleRange.startInput)}`}
+        </Text>
 
         <Pressable
           style={styles.weekNavButton}
           onPress={() => {
-            navigateMonth(1);
+            if (calendarExpanded) {
+              navigateMonth(1);
+            } else {
+              navigateWeek(1);
+            }
           }}
         >
-          <Text style={styles.weekNavButtonText}>Вперед</Text>
+          <Text style={styles.weekNavButtonText}>{calendarExpanded ? 'Вперед' : 'След. неделя'}</Text>
           <Ionicons name="chevron-forward" size={16} color={COLORS.textMain} />
         </Pressable>
       </View>
 
-      <View style={styles.monthCalendarCard}>
-        <View style={styles.monthCalendarWeekdaysRow}>
-          {DAY_CHIPS.map((day) => (
-            <Text key={`weekday_${day.index}`} style={styles.monthCalendarWeekdayText}>
-              {day.label}
-            </Text>
-          ))}
-        </View>
-        <View style={styles.monthCalendarGrid}>
-          {scheduleMonthCells.map((dateInput) => {
-            const inCurrentMonth = dateInput.startsWith(scheduleMonthCursor);
-            const isSelected = dateInput === selectedDayDateInput;
-            const isToday = dateInput === todayDateInput;
-            const isPast = isBeforeDateInput(dateInput, todayDateInput) && !isToday;
+      {!calendarExpanded ? (
+        <View style={styles.daysWeekRow}>
+          {fiveDayScheduleInputs.map((dateInput) => {
             const dayIndex = dayIndexFromDateInput(dateInput);
-            const isWeekend = dayIndex === 5 || dayIndex === 6;
+            const selected = dateInput === selectedDayDateInput;
             const hasBirthday = birthdayMarkers.has(dateInput);
-            const dayStats = scheduleDayStatsByDate.get(dateInput) ?? {
-              lessons: 0,
-              events: 0,
-              holidays: 0,
-            };
-            const customHolidayLabel = customHolidayByDate.get(dateInput) ?? null;
-            const calendarRange = schoolCalendarRangeForDate(dateInput);
-            const markerIcons: string[] = [];
-            if (hasBirthday) {
-              markerIcons.push('🎂');
-            }
-            if (customHolidayLabel) {
-              markerIcons.push('🏖️');
-            } else if (calendarRange) {
-              markerIcons.push(calendarRange.icon);
-            } else if (dayStats.events > 0) {
-              markerIcons.push('🎉');
-            }
-            const markerText = markerIcons.slice(0, 2).join(' ');
-            const lessonCount = dayStats.lessons;
+            const dayStats = scheduleDayStatsByDate.get(dateInput) ?? { lessons: 0, events: 0, holidays: 0 };
+            const hasHoliday = Boolean(customHolidayByDate.get(dateInput) || schoolCalendarRangeForDate(dateInput));
             return (
               <Pressable
-                key={`calendar_day_${dateInput}`}
-                style={[
-                  styles.monthCalendarDayCell,
-                  !inCurrentMonth && styles.monthCalendarDayCellOut,
-                  isWeekend && styles.monthCalendarDayCellWeekend,
-                  isPast && styles.monthCalendarDayCellPast,
-                  isSelected && styles.monthCalendarDayCellSelected,
-                ]}
+                key={`week_chip_${dateInput}`}
+                style={[styles.dayChip, styles.dayChipCompact, selected && styles.dayChipActive]}
                 onPress={() => {
                   selectScheduleDate(dateInput);
                 }}
               >
                 <Text
                   style={[
-                    styles.monthCalendarDayText,
-                    !inCurrentMonth && styles.monthCalendarDayTextOut,
-                    isPast && styles.monthCalendarDayTextPast,
-                    isSelected && styles.monthCalendarDayTextSelected,
+                    styles.dayChipText,
+                    styles.dayChipTextCompact,
+                    selected && styles.dayChipTextActive,
                   ]}
                 >
+                  {DAY_CHIPS[dayIndex].label}
+                </Text>
+                <Text style={[styles.dayChipDateText, selected && styles.dayChipDateTextActive]}>
                   {Number.parseInt(dateInput.slice(8, 10), 10)}
                 </Text>
-                {markerText ? <Text style={styles.monthCalendarMarker}>{markerText}</Text> : null}
-                {lessonCount > 0 ? (
-                  <View style={styles.monthCalendarLessonCountBadge}>
-                    <Text style={styles.monthCalendarLessonCountText}>{lessonCount > 9 ? '9+' : lessonCount}</Text>
-                  </View>
+                {hasBirthday ? (
+                  <Text style={styles.dayChipEmoji}>🎂</Text>
+                ) : hasHoliday ? (
+                  <Text style={styles.dayChipEmoji}>🍂</Text>
+                ) : dayStats.lessons > 0 ? (
+                  <View style={[styles.dayChipLessonDot, selected && styles.dayChipLessonDotActive]} />
                 ) : null}
-                {isToday && !isSelected ? <View style={styles.monthCalendarTodayRing} /> : null}
               </Pressable>
             );
           })}
         </View>
-      </View>
+      ) : (
+        <View style={styles.monthCalendarCard}>
+          <View style={styles.calendarMonthYearRow}>
+            <Pressable
+              style={styles.calendarMonthYearChip}
+              onPress={() => {
+                setMonthPickerVisible(true);
+              }}
+            >
+              <Text style={styles.calendarMonthYearChipText}>{scheduleMonthName}</Text>
+              <Ionicons name="chevron-down" size={14} color={COLORS.textMain} />
+            </Pressable>
+            <Pressable
+              style={styles.calendarMonthYearChip}
+              onPress={() => {
+                setYearPickerVisible(true);
+              }}
+            >
+              <Text style={styles.calendarMonthYearChipText}>{scheduleYearValue}</Text>
+              <Ionicons name="chevron-down" size={14} color={COLORS.textMain} />
+            </Pressable>
+          </View>
+          <View style={styles.monthCalendarWeekdaysRow}>
+            {DAY_CHIPS.map((day) => (
+              <Text key={`weekday_${day.index}`} style={styles.monthCalendarWeekdayText}>
+                {day.label}
+              </Text>
+            ))}
+          </View>
+          <View style={styles.monthCalendarGrid}>
+            {scheduleMonthCells.map((dateInput) => {
+              const inCurrentMonth = dateInput.startsWith(scheduleMonthCursor);
+              const isSelected = dateInput === selectedDayDateInput;
+              const isToday = dateInput === todayDateInput;
+              const isPast = isBeforeDateInput(dateInput, todayDateInput) && !isToday;
+              const dayIndex = dayIndexFromDateInput(dateInput);
+              const isWeekend = dayIndex === 5 || dayIndex === 6;
+              const hasBirthday = birthdayMarkers.has(dateInput);
+              const dayStats = scheduleDayStatsByDate.get(dateInput) ?? {
+                lessons: 0,
+                events: 0,
+                holidays: 0,
+              };
+              const customHolidayLabel = customHolidayByDate.get(dateInput) ?? null;
+              const calendarRange = schoolCalendarRangeForDate(dateInput);
+              const markerIcons: string[] = [];
+              if (hasBirthday) {
+                markerIcons.push('🎂');
+              }
+              if (customHolidayLabel) {
+                markerIcons.push('🏖️');
+              } else if (calendarRange) {
+                markerIcons.push(calendarRange.icon);
+              } else if (dayStats.events > 0) {
+                markerIcons.push('🎉');
+              }
+              const markerText = markerIcons.slice(0, 2).join(' ');
+              const lessonCount = dayStats.lessons;
+              return (
+                <Pressable
+                  key={`calendar_day_${dateInput}`}
+                  style={[
+                    styles.monthCalendarDayCell,
+                    !inCurrentMonth && styles.monthCalendarDayCellOut,
+                    isWeekend && styles.monthCalendarDayCellWeekend,
+                    isPast && styles.monthCalendarDayCellPast,
+                    isSelected && styles.monthCalendarDayCellSelected,
+                  ]}
+                  onPress={() => {
+                    selectScheduleDate(dateInput);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.monthCalendarDayText,
+                      !inCurrentMonth && styles.monthCalendarDayTextOut,
+                      isPast && styles.monthCalendarDayTextPast,
+                      isSelected && styles.monthCalendarDayTextSelected,
+                    ]}
+                  >
+                    {Number.parseInt(dateInput.slice(8, 10), 10)}
+                  </Text>
+                  {markerText ? <Text style={styles.monthCalendarMarker}>{markerText}</Text> : null}
+                  {lessonCount > 0 ? (
+                    <View style={styles.monthCalendarLessonCountBadge}>
+                      <Text style={styles.monthCalendarLessonCountText}>{lessonCount > 9 ? '9+' : lessonCount}</Text>
+                    </View>
+                  ) : null}
+                  {isToday && !isSelected ? <View style={styles.monthCalendarTodayRing} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
-      <View style={styles.calendarLegendRow}>
-        <Text style={styles.calendarLegendItem}>🎂 ДР</Text>
-        <Text style={styles.calendarLegendItem}>🍂 Каникулы</Text>
-        <Text style={styles.calendarLegendItem}>🏖️ Выходной</Text>
-        <Text style={styles.calendarLegendItem}>🔢 Уроки</Text>
-      </View>
+      {calendarExpanded ? (
+        <View style={styles.calendarLegendRow}>
+          <Text style={styles.calendarLegendItem}>🎂 ДР</Text>
+          <Text style={styles.calendarLegendItem}>🍂 Каникулы</Text>
+          <Text style={styles.calendarLegendItem}>🏖️ Выходной</Text>
+          <Text style={styles.calendarLegendItem}>🔢 Уроки</Text>
+        </View>
+      ) : null}
 
       <View style={styles.selectedDayMetaCard}>
         <Text style={styles.selectedDayMetaTitle}>
@@ -3959,8 +4065,9 @@ export function TeacherScreen({
             return (
               <View key={message.id} style={styles.taskCard}>
                 <Text style={styles.taskTitle}>
-                  Родитель {message.senderName}
-                  {message.childName ? ` (${message.childName})` : ''}
+                  {t(language, { ru: 'Родитель', en: 'Parent', he: 'הורה' })}{' '}
+                  {localizePersonName(message.senderName, language)}
+                  {message.childName ? ` (${localizePersonName(message.childName, language)})` : ''}
                 </Text>
                 <Text style={styles.taskText}>{message.text}</Text>
                 <Text style={styles.taskMeta}>{hhmm(message.createdAt)}</Text>
@@ -4006,7 +4113,17 @@ export function TeacherScreen({
           birthdayMessages.map((message) => (
             <View key={message.id} style={styles.taskCard}>
               <Text style={styles.taskTitle}>
-                {message.isIncoming ? `Поздравление от ${message.senderName}` : `Вы поздравили ${message.peerName}`}
+                {message.isIncoming
+                  ? t(language, {
+                      ru: `Поздравление от ${localizePersonName(message.senderName, language)}`,
+                      en: `Greeting from ${localizePersonName(message.senderName, language)}`,
+                      he: `ברכה מ-${localizePersonName(message.senderName, language)}`,
+                    })
+                  : t(language, {
+                      ru: `Вы поздравили ${localizePersonName(message.peerName, language)}`,
+                      en: `You congratulated ${localizePersonName(message.peerName, language)}`,
+                      he: `בירכת את ${localizePersonName(message.peerName, language)}`,
+                    })}
               </Text>
               <Text style={styles.taskText}>{message.text}</Text>
               <Text style={styles.taskMeta}>{hhmm(message.createdAt)}</Text>
@@ -4162,11 +4279,21 @@ export function TeacherScreen({
           {user.photo_uri ? (
             <Image source={{ uri: user.photo_uri }} style={styles.profileAvatarImage} />
           ) : (
-            <Text style={styles.profileAvatarText}>{user.name.charAt(0).toUpperCase()}</Text>
+            <Text style={styles.profileAvatarText}>
+              {localizePersonName(user.name, language).charAt(0).toUpperCase()}
+            </Text>
           )}
         </Pressable>
-        <Text style={styles.profileName}>{user.name}</Text>
-        <Text style={styles.profileSub}>{homeroomOptIn ? 'Учитель • Классный руководитель' : 'Учитель'}</Text>
+        <Text style={styles.profileName}>{localizePersonName(user.name, language)}</Text>
+        <Text style={styles.profileSub}>
+          {homeroomOptIn
+            ? t(language, {
+                ru: 'Учитель • Классный руководитель',
+                en: 'Teacher • Homeroom',
+                he: 'מורה • מחנך/ת כיתה',
+              })
+            : t(language, { ru: 'Учитель', en: 'Teacher', he: 'מורה' })}
+        </Text>
         {user.dob ? <Text style={styles.profileSub}>{user.dob.split('-').reverse().join('.')} 🎂</Text> : null}
       </LinearGradient>
 
@@ -4356,11 +4483,77 @@ export function TeacherScreen({
     return renderProfile();
   };
 
+  const stickyHeaderHeight = contentScrollY.interpolate({
+    inputRange: [0, 80],
+    outputRange: [headerMaxHeight, headerMinHeight],
+    extrapolate: 'clamp',
+  });
+  const stickyNameSize = contentScrollY.interpolate({
+    inputRange: [0, 80],
+    outputRange: [34, 24],
+    extrapolate: 'clamp',
+  });
+  const stickyMetaOpacity = contentScrollY.interpolate({
+    inputRange: [0, 80],
+    outputRange: [1, 0.85],
+    extrapolate: 'clamp',
+  });
+
   return (
     <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <Animated.View style={[styles.stickyHeaderWrap, { height: stickyHeaderHeight }]}>
+        <LinearGradient
+          colors={[COLORS.gradientFrom, COLORS.gradientTo]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.headerGradient, { paddingTop: 10 + headerTopInset }]}
+        >
+          <View style={styles.headerIdentityRow}>
+            <Pressable style={styles.headerAvatarTapArea} onPress={() => void pickProfilePhoto()}>
+              {user.photo_uri ? (
+                <Image source={{ uri: user.photo_uri }} style={styles.headerAvatarImage} />
+              ) : (
+                <View style={styles.headerAvatarFallback}>
+                  <Text style={styles.headerAvatarFallbackText}>
+                    {localizePersonName(user.name, language).charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+
+            <View style={styles.stickyIdentityTextCol}>
+              <Animated.Text style={[styles.headerUserName, { fontSize: stickyNameSize }]}>
+                {localizePersonName(user.name, language)}
+              </Animated.Text>
+              <Animated.View style={[styles.headerRoleBadge, { opacity: stickyMetaOpacity }]}>
+                <Text style={styles.headerRoleText}>{t(language, { ru: 'Учитель', en: 'Teacher', he: 'מורה' })}</Text>
+              </Animated.View>
+            </View>
+
+            <Pressable style={styles.notificationsButton} onPress={() => setTab('tasks')}>
+              <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
+              {messagesForBadge > 0 ? (
+                <View style={styles.notificationsBadge}>
+                  <Text style={styles.notificationsBadgeText}>{messagesForBadge}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
+          <BlurView intensity={28} tint="light" style={styles.headerBottomBlur} />
+        </LinearGradient>
+      </Animated.View>
+
+      <Animated.ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingTop: headerMaxHeight + 8 }]}
+        showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: contentScrollY } } }], {
+          useNativeDriver: false,
+        })}
+      >
         {renderContent()}
-      </ScrollView>
+      </Animated.ScrollView>
 
       <View style={styles.bottomNavBar}>
         {NAV_ITEMS.map((item) => {
@@ -5414,7 +5607,9 @@ export function TeacherScreen({
               <View style={styles.sheetTopHandle} />
             </View>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Карточка ученика</Text>
+              <Text style={styles.modalTitle}>
+                {t(language, { ru: 'Карточка ученика', en: 'Student card', he: 'כרטיס תלמיד' })}
+              </Text>
               <Pressable onPress={closeStudentCard}>
                 <Ionicons name="close" size={24} color={COLORS.textMain} />
               </Pressable>
@@ -5428,7 +5623,13 @@ export function TeacherScreen({
             >
               {studentCardLoading ? (
                 <View style={styles.emptyBlock}>
-                  <Text style={styles.emptyText}>Загружаем карточку ученика...</Text>
+                  <Text style={styles.emptyText}>
+                    {t(language, {
+                      ru: 'Загружаем карточку ученика...',
+                      en: 'Loading student card...',
+                      he: 'טוען כרטיס תלמיד...',
+                    })}
+                  </Text>
                 </View>
               ) : null}
 
@@ -5446,14 +5647,16 @@ export function TeacherScreen({
                     ) : (
                       <View style={styles.studentCardAvatarFallback}>
                         <Text style={styles.studentCardAvatarFallbackText}>
-                          {studentCardDetails.student.name.charAt(0).toUpperCase()}
+                          {localizePersonName(studentCardDetails.student.name, language).charAt(0).toUpperCase()}
                         </Text>
                       </View>
                     )}
 
                     <View style={styles.studentCardIdentityMain}>
                       <View style={styles.studentCardNameRow}>
-                        <Text style={styles.studentCardName}>{studentCardDetails.student.name}</Text>
+                        <Text style={styles.studentCardName}>
+                          {localizePersonName(studentCardDetails.student.name, language)}
+                        </Text>
                         {studentCardDetails.student.is_birthday_today ? (
                           <Text style={styles.studentCardBirthday}>🎂</Text>
                         ) : null}
@@ -5461,7 +5664,7 @@ export function TeacherScreen({
                       <Text style={styles.studentCardMeta}>
                         {studentCardDetails.student.class_name}
                         {studentCardDetails.student.dob
-                          ? ` • ДР: ${dateInputLabel(studentCardDetails.student.dob)}`
+                          ? ` • ${t(language, { ru: 'ДР', en: 'DOB', he: 'ת״ל' })}: ${dateInputLabel(studentCardDetails.student.dob)}`
                           : ''}
                       </Text>
                     </View>
@@ -5481,15 +5684,25 @@ export function TeacherScreen({
                             : styles.studentStatusPresentText,
                         ]}
                       >
-                        {studentCardDetails.student.status === 'absent' ? 'Отсутствует' : 'В школе'}
+                        {studentCardDetails.student.status === 'absent'
+                          ? t(language, { ru: 'Отсутствует', en: 'Absent', he: 'נעדר/ת' })
+                          : t(language, { ru: 'В школе', en: 'At school', he: 'בבית הספר' })}
                       </Text>
                     </View>
                   </View>
 
                   <View style={styles.studentCardSection}>
-                    <Text style={styles.studentCardSectionTitle}>Родители / Опекуны</Text>
+                    <Text style={styles.studentCardSectionTitle}>
+                      {t(language, { ru: 'Родители / Опекуны', en: 'Parents / Guardians', he: 'הורים / אפוטרופוסים' })}
+                    </Text>
                     {studentCardDetails.parents.length === 0 ? (
-                      <Text style={styles.studentCardEmptyText}>Связанные родители не найдены.</Text>
+                      <Text style={styles.studentCardEmptyText}>
+                        {t(language, {
+                          ru: 'Связанные родители не найдены.',
+                          en: 'No linked parents found.',
+                          he: 'לא נמצאו הורים מקושרים.',
+                        })}
+                      </Text>
                     ) : (
                       studentCardDetails.parents.map((parent) => (
                         <View key={parent.user_id} style={styles.studentCardParentRow}>
@@ -5502,9 +5715,11 @@ export function TeacherScreen({
                           )}
 
                           <View style={styles.studentCardParentMain}>
-                            <Text style={styles.studentCardParentName}>{parent.name}</Text>
+                            <Text style={styles.studentCardParentName}>
+                              {localizePersonName(parent.name, language)}
+                            </Text>
                             <Text style={styles.studentCardParentMeta}>
-                              {parentRelationLabel(parent.relation)}
+                              {parentRelationLabel(parent.relation, language)}
                               {parent.phone ? ` • ${parent.phone}` : ''}
                             </Text>
                           </View>
@@ -5533,23 +5748,38 @@ export function TeacherScreen({
                   </View>
 
                   <View style={styles.studentCardSection}>
-                    <Text style={styles.studentCardSectionTitle}>Учебная сводка</Text>
+                    <Text style={styles.studentCardSectionTitle}>
+                      {t(language, { ru: 'Учебная сводка', en: 'Academic summary', he: 'סיכום לימודי' })}
+                    </Text>
                     <View style={styles.studentCardSummaryRow}>
-                      <Text style={styles.studentCardSummaryLabel}>Последняя оценка</Text>
+                      <Text style={styles.studentCardSummaryLabel}>
+                        {t(language, { ru: 'Последняя оценка', en: 'Latest grade', he: 'ציון אחרון' })}
+                      </Text>
                       <Text style={styles.studentCardSummaryValue}>
-                        {studentCardDetails.summary.latest_grade ?? 'Нет данных'}
+                        {studentCardDetails.summary.latest_grade ??
+                          t(language, { ru: 'Нет данных', en: 'No data', he: 'אין נתונים' })}
                       </Text>
                     </View>
                     <View style={styles.studentCardSummaryRow}>
-                      <Text style={styles.studentCardSummaryLabel}>Всего ДЗ по классу</Text>
+                      <Text style={styles.studentCardSummaryLabel}>
+                        {t(language, { ru: 'Всего ДЗ по классу', en: 'Total homework', he: 'סה״כ שיעורי בית' })}
+                      </Text>
                       <Text style={styles.studentCardSummaryValue}>{studentCardDetails.summary.homework_total}</Text>
                     </View>
                     <View style={styles.studentCardSummaryRow}>
-                      <Text style={styles.studentCardSummaryLabel}>Просрочено</Text>
+                      <Text style={styles.studentCardSummaryLabel}>
+                        {t(language, { ru: 'Просрочено', en: 'Overdue', he: 'באיחור' })}
+                      </Text>
                       <Text style={styles.studentCardSummaryValue}>{studentCardDetails.summary.homework_overdue}</Text>
                     </View>
                     <View style={styles.studentCardSummaryRow}>
-                      <Text style={styles.studentCardSummaryLabel}>Без отметки ученика</Text>
+                      <Text style={styles.studentCardSummaryLabel}>
+                        {t(language, {
+                          ru: 'Без отметки ученика',
+                          en: 'Without student mark',
+                          he: 'ללא סימון תלמיד',
+                        })}
+                      </Text>
                       <Text style={styles.studentCardSummaryValue}>
                         {studentCardDetails.summary.homework_unconfirmed}
                       </Text>
@@ -5563,42 +5793,72 @@ export function TeacherScreen({
       </Modal>
 
       <Modal
-        visible={rangePickerVisible}
+        visible={monthPickerVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setRangePickerVisible(false)}
+        onRequestClose={() => setMonthPickerVisible(false)}
       >
         <View style={styles.modalBackdropCentered}>
           <View style={styles.rangeModal}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Выбор месяца</Text>
-              <Pressable onPress={() => setRangePickerVisible(false)}>
+              <Text style={styles.modalTitle}>Выберите месяц</Text>
+              <Pressable onPress={() => setMonthPickerVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORS.textMain} />
               </Pressable>
             </View>
-
             <ScrollView style={styles.datePickerScroll} showsVerticalScrollIndicator={false}>
-              {monthPickerOptions.map((option) => {
-                const active = option.cursor === scheduleMonthCursor;
+              {Array.from({ length: 12 }, (_, index) => {
+                const monthValue = index + 1;
+                const monthText = monthNameFromCursor(
+                  `${String(scheduleYearValue).padStart(4, '0')}-${String(monthValue).padStart(2, '0')}`,
+                );
+                const active = scheduleMonthCursor.endsWith(`-${String(monthValue).padStart(2, '0')}`);
                 return (
                   <Pressable
-                    key={`month_${option.cursor}`}
+                    key={`month_select_${monthValue}`}
                     style={[styles.weekOptionCard, active && styles.weekOptionCardActive]}
                     onPress={() => {
-                      setScheduleMonthCursor(option.cursor);
-                      setSelectedRange({
-                        startInput: option.startInput,
-                        endInput: option.endInput,
-                      });
-                      selectScheduleDate(option.startInput);
-                      setRangePickerVisible(false);
+                      selectScheduleMonth(monthValue);
                     }}
                   >
                     <Text style={[styles.weekOptionTitle, active && styles.weekOptionTitleActive]}>
-                      {monthLabelFromCursor(option.cursor)}
+                      {monthText}
                     </Text>
-                    <Text style={[styles.weekOptionDays, active && styles.weekOptionDaysActive]}>
-                      {dateShortLabel(option.startInput)} — {dateShortLabel(option.endInput)}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={yearPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setYearPickerVisible(false)}
+      >
+        <View style={styles.modalBackdropCentered}>
+          <View style={styles.rangeModal}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Выберите год</Text>
+              <Pressable onPress={() => setYearPickerVisible(false)}>
+                <Ionicons name="close" size={24} color={COLORS.textMain} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.datePickerScroll} showsVerticalScrollIndicator={false}>
+              {scheduleYearOptions.map((yearOption) => {
+                const active = yearOption === scheduleYearValue;
+                return (
+                  <Pressable
+                    key={`year_select_${yearOption}`}
+                    style={[styles.weekOptionCard, active && styles.weekOptionCardActive]}
+                    onPress={() => {
+                      selectScheduleYear(yearOption);
+                    }}
+                  >
+                    <Text style={[styles.weekOptionTitle, active && styles.weekOptionTitleActive]}>
+                      {yearOption}
                     </Text>
                   </Pressable>
                 );
@@ -5683,7 +5943,9 @@ export function TeacherScreen({
         >
           <View style={styles.sheetModal}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Ответ родителю</Text>
+              <Text style={styles.modalTitle}>
+                {t(language, { ru: 'Ответ родителю', en: 'Reply to parent', he: 'תגובה להורה' })}
+              </Text>
               <Pressable
                 onPress={() => {
                   setReplyModalVisible(false);
@@ -5697,19 +5959,24 @@ export function TeacherScreen({
             {selectedParentMessage ? (
               <>
                 <Text style={styles.replyToText}>
-                  Кому: {selectedParentMessage.senderName}
-                  {selectedParentMessage.childName ? ` (${selectedParentMessage.childName})` : ''}
+                  {t(language, { ru: 'Кому', en: 'To', he: 'למי' })}:{' '}
+                  {localizePersonName(selectedParentMessage.senderName, language)}
+                  {selectedParentMessage.childName
+                    ? ` (${localizePersonName(selectedParentMessage.childName, language)})`
+                    : ''}
                 </Text>
                 <TextInput
                   value={replyText}
                   onChangeText={setReplyText}
-                  placeholder="Введите ответ"
+                  placeholder={t(language, { ru: 'Введите ответ', en: 'Type a reply', he: 'הקלד תגובה' })}
                   style={[styles.modalInput, styles.multilineInput]}
                   multiline
                   textAlignVertical="top"
                 />
                 <Pressable style={styles.submitPrimaryButton} onPress={() => void sendReplyToParent()}>
-                  <Text style={styles.submitPrimaryButtonText}>Отправить</Text>
+                  <Text style={styles.submitPrimaryButtonText}>
+                    {t(language, { ru: 'Отправить', en: 'Send', he: 'שלח' })}
+                  </Text>
                 </Pressable>
               </>
             ) : null}
@@ -6168,60 +6435,64 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 104,
   },
+  stickyHeaderWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 40,
+  },
   headerGradient: {
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 26,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerDate: {
-    color: '#E2E8F0',
-    fontWeight: '600',
-    fontSize: 14,
+    flex: 1,
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
   },
   headerUserName: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 32,
+    fontSize: 34,
     flexShrink: 1,
   },
   headerIdentityRow: {
-    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
+    flex: 1,
   },
   headerAvatarTapArea: {
-    borderRadius: 22,
+    borderRadius: 999,
+  },
+  stickyIdentityTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
   },
   headerRoleBadge: {
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.24)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
   },
   headerRoleText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
   headerAvatarImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.55)',
   },
   headerAvatarFallback: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.25)',
@@ -6232,9 +6503,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   notificationsButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -6255,6 +6526,13 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '700',
+  },
+  headerBottomBlur: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: -2,
+    height: 12,
   },
   importantCard: {
     marginTop: 12,
@@ -6713,6 +6991,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
+  calendarMonthYearRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  calendarMonthYearChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  calendarMonthYearChipText: {
+    color: COLORS.textMain,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   monthCalendarWeekdaysRow: {
     flexDirection: 'row',
     marginBottom: 6,
@@ -6884,8 +7184,31 @@ const styles = StyleSheet.create({
   dayChipTextCompact: {
     fontSize: 12,
   },
+  dayChipDateText: {
+    marginTop: 2,
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dayChipDateTextActive: {
+    color: '#FFFFFF',
+  },
   dayChipTextActive: {
     color: '#FFFFFF',
+  },
+  dayChipEmoji: {
+    marginTop: 2,
+    fontSize: 10,
+  },
+  dayChipLessonDot: {
+    marginTop: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#94A3B8',
+  },
+  dayChipLessonDotActive: {
+    backgroundColor: '#E9D5FF',
   },
   birthdayDot: {
     marginTop: 4,

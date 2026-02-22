@@ -9,6 +9,230 @@ const CYRILLIC_CHAR_RE = /[\u0400-\u04ff]/;
 const LATIN_CHAR_RE = /[A-Za-z]/;
 const SPLIT_TOKEN_RE = /(\s+|[()[\]{}.,!?;:/\\-]+)/g;
 const ONLY_SEPARATOR_RE = /^(\s+|[()[\]{}.,!?;:/\\-]+)$/;
+const HEBREW_DIACRITICS_RE = /[\u0591-\u05C7]/g;
+const TEXT_NOISE_RE = /[()[\]{}.,!?;:'"`]/g;
+
+const LATIN_TO_RU_MULTI: Record<string, string> = {
+  shch: 'щ',
+  yo: 'ё',
+  zh: 'ж',
+  kh: 'х',
+  ts: 'ц',
+  ch: 'ч',
+  sh: 'ш',
+  yu: 'ю',
+  ya: 'я',
+  ph: 'ф',
+  th: 'т',
+};
+
+const LATIN_TO_RU_CHAR: Record<string, string> = {
+  a: 'а',
+  b: 'б',
+  c: 'к',
+  d: 'д',
+  e: 'е',
+  f: 'ф',
+  g: 'г',
+  h: 'х',
+  i: 'и',
+  j: 'й',
+  k: 'к',
+  l: 'л',
+  m: 'м',
+  n: 'н',
+  o: 'о',
+  p: 'п',
+  q: 'к',
+  r: 'р',
+  s: 'с',
+  t: 'т',
+  u: 'у',
+  v: 'в',
+  w: 'в',
+  x: 'кс',
+  y: 'й',
+  z: 'з',
+};
+
+const HEBREW_TO_RU_CHAR: Record<string, string> = {
+  א: 'а',
+  ב: 'б',
+  ג: 'г',
+  ד: 'д',
+  ה: 'х',
+  ו: 'в',
+  ז: 'з',
+  ח: 'х',
+  ט: 'т',
+  י: 'й',
+  כ: 'к',
+  ך: 'к',
+  ל: 'л',
+  מ: 'м',
+  ם: 'м',
+  נ: 'н',
+  ן: 'н',
+  ס: 'с',
+  ע: 'а',
+  פ: 'п',
+  ף: 'п',
+  צ: 'ц',
+  ץ: 'ц',
+  ק: 'к',
+  ר: 'р',
+  ש: 'ш',
+  ת: 'т',
+};
+
+const CYRILLIC_TO_EN_MULTI: Record<string, string> = {
+  щ: 'shch',
+  ж: 'zh',
+  х: 'kh',
+  ц: 'ts',
+  ч: 'ch',
+  ш: 'sh',
+  ю: 'yu',
+  я: 'ya',
+};
+
+const CYRILLIC_TO_EN_CHAR: Record<string, string> = {
+  а: 'a',
+  б: 'b',
+  в: 'v',
+  г: 'g',
+  д: 'd',
+  е: 'e',
+  ё: 'yo',
+  з: 'z',
+  и: 'i',
+  й: 'y',
+  к: 'k',
+  л: 'l',
+  м: 'm',
+  н: 'n',
+  о: 'o',
+  п: 'p',
+  р: 'r',
+  с: 's',
+  т: 't',
+  у: 'u',
+  ф: 'f',
+  ъ: '',
+  ы: 'y',
+  ь: '',
+  э: 'e',
+};
+
+const HEBREW_TO_EN_CHAR: Record<string, string> = {
+  א: 'a',
+  ב: 'b',
+  ג: 'g',
+  ד: 'd',
+  ה: 'h',
+  ו: 'v',
+  ז: 'z',
+  ח: 'kh',
+  ט: 't',
+  י: 'y',
+  כ: 'k',
+  ך: 'k',
+  ל: 'l',
+  מ: 'm',
+  ם: 'm',
+  נ: 'n',
+  ן: 'n',
+  ס: 's',
+  ע: 'a',
+  פ: 'p',
+  ף: 'p',
+  צ: 'ts',
+  ץ: 'ts',
+  ק: 'k',
+  ר: 'r',
+  ש: 'sh',
+  ת: 't',
+};
+
+const LATIN_TO_HE_MULTI: Record<string, string> = {
+  sh: 'ש',
+  ch: 'צ',
+  kh: 'ח',
+  zh: 'ז',
+  ya: 'יא',
+  yo: 'יו',
+  yu: 'יו',
+  ts: 'צ',
+  ph: 'פ',
+};
+
+const LATIN_TO_HE_CHAR: Record<string, string> = {
+  a: 'א',
+  b: 'ב',
+  c: 'ק',
+  d: 'ד',
+  e: 'א',
+  f: 'פ',
+  g: 'ג',
+  h: 'ה',
+  i: 'י',
+  j: 'ג',
+  k: 'ק',
+  l: 'ל',
+  m: 'מ',
+  n: 'נ',
+  o: 'ו',
+  p: 'פ',
+  q: 'ק',
+  r: 'ר',
+  s: 'ס',
+  t: 'ט',
+  u: 'ו',
+  v: 'ו',
+  w: 'ו',
+  x: 'קס',
+  y: 'י',
+  z: 'ז',
+};
+
+const CYRILLIC_TO_HE_MULTI: Record<string, string> = {
+  ж: 'ז׳',
+  х: 'ח',
+  ц: 'צ',
+  ч: 'צ׳',
+  ш: 'ש',
+  щ: 'שצ׳',
+  ю: 'יו',
+  я: 'יא',
+  ё: 'יו',
+};
+
+const CYRILLIC_TO_HE_CHAR: Record<string, string> = {
+  а: 'א',
+  б: 'ב',
+  в: 'ו',
+  г: 'ג',
+  д: 'ד',
+  е: 'א',
+  з: 'ז',
+  и: 'י',
+  й: 'י',
+  к: 'ק',
+  л: 'ל',
+  м: 'מ',
+  н: 'נ',
+  о: 'ו',
+  п: 'פ',
+  р: 'ר',
+  с: 'ס',
+  т: 'ט',
+  у: 'ו',
+  ф: 'פ',
+  ы: 'י',
+  э: 'א',
+  ъ: '',
+  ь: '',
+};
 
 const phraseTriplets: LocalizedTriplet[] = [
   {
@@ -118,9 +342,14 @@ const tokenTriplets: LocalizedTriplet[] = [
   { ru: 'актовый', en: 'main', he: 'ראשי' },
   { ru: 'зал', en: 'hall', he: 'אולם' },
   { ru: 'студия', en: 'studio', he: 'סטודיו' },
-  { ru: 'привет', en: 'hello', he: 'שלום' },
+  { ru: 'здравствуйте', en: 'hello', he: 'שלום' },
   { ru: 'спасибо', en: 'thanks', he: 'תודה' },
   { ru: 'добро пожаловать', en: 'welcome', he: 'ברוכים הבאים' },
+  { ru: 'марк', en: 'mark', he: 'מארק' },
+  { ru: 'отсутствовать', en: 'absent', he: 'ייעדר' },
+  { ru: 'первого', en: 'first', he: 'הראשון' },
+  { ru: 'урок', en: 'lesson', he: 'שיעור' },
+  { ru: 'урока', en: 'lesson', he: 'מהשיעור' },
 ];
 
 const phraseIndex = createIndex(phraseTriplets);
@@ -147,7 +376,13 @@ function createIndex(entries: LocalizedTriplet[]): Record<AppLanguage, Map<strin
 }
 
 function normalizeText(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+  return value
+    .normalize('NFKD')
+    .replace(HEBREW_DIACRITICS_RE, '')
+    .replace(TEXT_NOISE_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase();
 }
 
 function stripLegacyPrefix(value: string): string {
@@ -160,6 +395,53 @@ function stripLegacyPrefix(value: string): string {
 
 function hasLegacyPrefix(value: string): boolean {
   return LEGACY_PREFIXES.some((prefix) => prefix.test(value));
+}
+
+function maxMultiKeyLength(multiMap?: Record<string, string>): number {
+  if (!multiMap) {
+    return 0;
+  }
+  return Object.keys(multiMap).reduce((max, key) => Math.max(max, key.length), 0);
+}
+
+function transliterateWithMap(
+  text: string,
+  charMap: Record<string, string>,
+  multiMap?: Record<string, string>,
+): string {
+  const maxLength = maxMultiKeyLength(multiMap);
+  let index = 0;
+  let result = '';
+
+  while (index < text.length) {
+    if (multiMap && maxLength > 1) {
+      let matched = false;
+      for (let size = maxLength; size > 1; size -= 1) {
+        const chunk = text.slice(index, index + size);
+        if (chunk.length !== size) {
+          continue;
+        }
+        const replacement = multiMap[chunk.toLocaleLowerCase()];
+        if (!replacement) {
+          continue;
+        }
+        result += applyTokenCase(chunk, replacement);
+        index += size;
+        matched = true;
+        break;
+      }
+      if (matched) {
+        continue;
+      }
+    }
+
+    const sourceChar = text[index];
+    const replacement = charMap[sourceChar.toLocaleLowerCase()];
+    result += typeof replacement === 'undefined' ? sourceChar : applyTokenCase(sourceChar, replacement);
+    index += 1;
+  }
+
+  return result;
 }
 
 function detectByScript(text: string): AppLanguage {
@@ -209,6 +491,41 @@ function findTripletByAnyLanguage(text: string, index: Record<AppLanguage, Map<s
     return null;
   }
   return index.he.get(normalized) ?? index.ru.get(normalized) ?? index.en.get(normalized) ?? null;
+}
+
+function translateByPatterns(text: string, sourceLanguage: AppLanguage, targetLanguage: AppLanguage): string | null {
+  if (sourceLanguage !== 'he') {
+    return null;
+  }
+
+  const absencePattern = /^שלום[, ]+(.+?)\s+ייעדר(?:\/ת)?\s+מהשיעור\s+הראשון\s+מחר[.!?]?$/u;
+  const simpleAbsencePattern = /^(.+?)\s+לא\s+יגיע(?:\/ת)?\s+מחר[.!?]?$/u;
+
+  const absenceMatch = text.trim().match(absencePattern);
+  if (absenceMatch?.[1]) {
+    const nameRu = localizePersonName(absenceMatch[1].trim(), 'ru');
+    const nameEn = localizePersonName(absenceMatch[1].trim(), 'en');
+    if (targetLanguage === 'ru') {
+      return `Здравствуйте, ${nameRu} будет отсутствовать на первом уроке завтра.`;
+    }
+    if (targetLanguage === 'en') {
+      return `Hello, ${nameEn} will miss the first lesson tomorrow.`;
+    }
+  }
+
+  const simpleMatch = text.trim().match(simpleAbsencePattern);
+  if (simpleMatch?.[1]) {
+    const nameRu = localizePersonName(simpleMatch[1].trim(), 'ru');
+    const nameEn = localizePersonName(simpleMatch[1].trim(), 'en');
+    if (targetLanguage === 'ru') {
+      return `${nameRu} не придет завтра.`;
+    }
+    if (targetLanguage === 'en') {
+      return `${nameEn} will not come tomorrow.`;
+    }
+  }
+
+  return null;
 }
 
 function translateByTokens(text: string, sourceLanguage: AppLanguage, targetLanguage: AppLanguage): string {
@@ -295,9 +612,21 @@ export function translateText(
     return exact;
   }
 
+  const patternTranslation = translateByPatterns(cleanText, originalLanguage, targetLanguage);
+  if (patternTranslation !== null) {
+    translationCache.set(cacheKey, patternTranslation);
+    return patternTranslation;
+  }
+
   const tokenized = translateByTokens(cleanText, originalLanguage, targetLanguage);
-  translationCache.set(cacheKey, tokenized);
-  return tokenized;
+  if (tokenized !== cleanText) {
+    translationCache.set(cacheKey, tokenized);
+    return tokenized;
+  }
+
+  const transliteratedFallback = localizePersonName(cleanText, targetLanguage);
+  translationCache.set(cacheKey, transliteratedFallback);
+  return transliteratedFallback;
 }
 
 export function buildTranslations(text: string, original?: AppLanguage): TranslationMap {
@@ -324,17 +653,42 @@ export function ensureTranslationMap(
   originalLanguage?: AppLanguage | null,
   translations?: PartialTranslationMap,
 ): TranslationMap {
-  const detectedOriginal = originalLanguage ?? detectLanguage(textOriginal);
-  const fallback = buildTranslations(textOriginal, detectedOriginal);
+  const detectedByText = detectLanguage(textOriginal);
+  const resolvedOriginal = detectedByText || originalLanguage || 'en';
+  const fallback = buildTranslations(textOriginal, resolvedOriginal);
 
-  const he = translations?.he?.trim();
-  const ru = translations?.ru?.trim();
-  const en = translations?.en?.trim();
+  const he = translations?.he?.trim() ?? '';
+  const ru = translations?.ru?.trim() ?? '';
+  const en = translations?.en?.trim() ?? '';
+
+  const textNormalized = normalizeText(textOriginal);
+  const isValid = (candidate: string, targetLanguage: AppLanguage): boolean => {
+    if (!candidate || hasLegacyPrefix(candidate)) {
+      return false;
+    }
+    const normalized = normalizeText(candidate);
+    if (!normalized) {
+      return false;
+    }
+    if (targetLanguage !== resolvedOriginal && normalized === textNormalized) {
+      return false;
+    }
+    if (targetLanguage === 'ru' && HEBREW_CHAR_RE.test(candidate)) {
+      return false;
+    }
+    if (targetLanguage === 'en' && (HEBREW_CHAR_RE.test(candidate) || CYRILLIC_CHAR_RE.test(candidate))) {
+      return false;
+    }
+    if (targetLanguage === 'he' && (LATIN_CHAR_RE.test(candidate) || CYRILLIC_CHAR_RE.test(candidate))) {
+      return false;
+    }
+    return true;
+  };
 
   return {
-    he: he && !hasLegacyPrefix(he) ? he : fallback.he,
-    ru: ru && !hasLegacyPrefix(ru) ? ru : fallback.ru,
-    en: en && !hasLegacyPrefix(en) ? en : fallback.en,
+    he: isValid(he, 'he') ? he : fallback.he,
+    ru: isValid(ru, 'ru') ? ru : fallback.ru,
+    en: isValid(en, 'en') ? en : fallback.en,
   };
 }
 
@@ -349,4 +703,42 @@ export function getLocalizedText(
     return cleanOriginal;
   }
   return translations[userLanguage] || cleanOriginal;
+}
+
+export function localizePersonName(name: string, language: AppLanguage): string {
+  const cleanName = name.trim();
+  if (!cleanName) {
+    return '';
+  }
+
+  if (language === 'ru') {
+    let result = cleanName;
+    if (HEBREW_CHAR_RE.test(result)) {
+      result = transliterateWithMap(result, HEBREW_TO_RU_CHAR);
+    }
+    if (LATIN_CHAR_RE.test(result)) {
+      result = transliterateWithMap(result, LATIN_TO_RU_CHAR, LATIN_TO_RU_MULTI);
+    }
+    return result;
+  }
+
+  if (language === 'en') {
+    let result = cleanName;
+    if (HEBREW_CHAR_RE.test(result)) {
+      result = transliterateWithMap(result, HEBREW_TO_EN_CHAR);
+    }
+    if (CYRILLIC_CHAR_RE.test(result)) {
+      result = transliterateWithMap(result, CYRILLIC_TO_EN_CHAR, CYRILLIC_TO_EN_MULTI);
+    }
+    return result;
+  }
+
+  let result = cleanName;
+  if (CYRILLIC_CHAR_RE.test(result)) {
+    result = transliterateWithMap(result, CYRILLIC_TO_HE_CHAR, CYRILLIC_TO_HE_MULTI);
+  }
+  if (LATIN_CHAR_RE.test(result)) {
+    result = transliterateWithMap(result, LATIN_TO_HE_CHAR, LATIN_TO_HE_MULTI);
+  }
+  return result;
 }
