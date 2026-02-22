@@ -32,7 +32,7 @@ import {
   lessonsForUser,
   todayLessons,
 } from '../lib/selectors';
-import { t } from '../lib/i18n';
+import { localizeLessonSubject, t } from '../lib/i18n';
 import {
   fromJerusalemDateTime,
   getDayIndexInJerusalem,
@@ -180,13 +180,29 @@ const SCHOOL_CALENDAR_RANGES: SchoolCalendarRange[] = [
   { id: 'summer_primary_2026', startInput: '2026-07-01', endInput: '2026-08-31', label: 'Летние каникулы (начальная)', icon: '🌻' },
 ];
 
-const NAV_ITEMS: Array<{ key: TeacherTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { key: 'home', label: 'Главная', icon: 'home-outline' },
-  { key: 'schedule', label: 'Расписание', icon: 'calendar-outline' },
-  { key: 'tasks', label: 'Сообщения', icon: 'chatbubble-ellipses-outline' },
-  { key: 'classes', label: 'Классы', icon: 'people-outline' },
-  { key: 'profile', label: 'Профиль', icon: 'person-outline' },
+const NAV_ITEMS: Array<{ key: TeacherTab; icon: keyof typeof Ionicons.glyphMap }> = [
+  { key: 'home', icon: 'home-outline' },
+  { key: 'schedule', icon: 'calendar-outline' },
+  { key: 'tasks', icon: 'chatbubble-ellipses-outline' },
+  { key: 'classes', icon: 'people-outline' },
+  { key: 'profile', icon: 'person-outline' },
 ];
+
+function tabLabel(tab: TeacherTab, language: User['preferred_language']): string {
+  if (tab === 'home') {
+    return t(language, { ru: 'Главная', en: 'Home', he: 'ראשי' });
+  }
+  if (tab === 'schedule') {
+    return t(language, { ru: 'Расписание', en: 'Schedule', he: 'מערכת' });
+  }
+  if (tab === 'tasks') {
+    return t(language, { ru: 'Сообщения', en: 'Messages', he: 'הודעות' });
+  }
+  if (tab === 'classes') {
+    return t(language, { ru: 'Классы', en: 'Classes', he: 'כיתות' });
+  }
+  return t(language, { ru: 'Профиль', en: 'Profile', he: 'פרופיל' });
+}
 
 function className(snapshot: DatabaseSnapshot, classId: string): string {
   return snapshot.classes.find((entry) => entry.id === classId)?.name ?? classId;
@@ -1269,6 +1285,34 @@ export function TeacherScreen({
     [snapshot.subjects],
   );
 
+  const localizeSubjectName = useCallback(
+    (subject: string): string => {
+      const clean = subject.trim();
+      if (!clean) {
+        return clean;
+      }
+      const lower = clean.toLocaleLowerCase();
+      const subjectModel = snapshot.subjects.find((entry) => {
+        const baseName = entry.name.trim();
+        if (baseName && baseName.toLocaleLowerCase() === lower) {
+          return true;
+        }
+        return (['ru', 'en', 'he'] as const).some((code) => {
+          const translated = entry.name_i18n?.[code]?.trim() ?? '';
+          return translated.toLocaleLowerCase() === lower;
+        });
+      });
+      if (subjectModel) {
+        const localizedFromModel = subjectModel.name_i18n?.[language]?.trim() ?? '';
+        if (localizedFromModel) {
+          return localizedFromModel;
+        }
+      }
+      return localizeLessonSubject(clean, language);
+    },
+    [language, snapshot.subjects],
+  );
+
   const subjects = useMemo(
     () => (inferredTeachingSubjects.length > 0 ? inferredTeachingSubjects : availableAdminSubjects),
     [inferredTeachingSubjects, availableAdminSubjects],
@@ -1318,8 +1362,14 @@ export function TeacherScreen({
   );
 
   const homeroomClassName = useMemo(
-    () => teacherClassModels.find((entry) => entry.id === homeroomClassId)?.name ?? '',
-    [homeroomClassId, teacherClassModels],
+    () => {
+      const classModel = teacherClassModels.find((entry) => entry.id === homeroomClassId);
+      if (!classModel) {
+        return '';
+      }
+      return classModel.name_i18n?.[language] ?? classModel.name;
+    },
+    [homeroomClassId, language, teacherClassModels],
   );
 
   const parentIdsByChild = useMemo(() => {
@@ -4298,25 +4348,35 @@ export function TeacherScreen({
       </LinearGradient>
 
       <View style={styles.profileActionsCard}>
+        <Pressable style={styles.profileActionButton} onPress={onToggleOriginal}>
+          <Ionicons name={showOriginal ? 'eye-outline' : 'eye-off-outline'} size={18} color={COLORS.textMain} />
+          <Text style={styles.profileActionText}>
+            {showOriginal
+              ? t(language, { ru: 'Оригинал текста: включен', en: 'Original text: on', he: 'טקסט מקור: פעיל' })
+              : t(language, { ru: 'Оригинал текста: выключен', en: 'Original text: off', he: 'טקסט מקור: כבוי' })}
+          </Text>
+        </Pressable>
         <Pressable style={[styles.profileActionButton, styles.logoutActionButton]} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={18} color={COLORS.red} />
-          <Text style={styles.logoutActionText}>Выйти из аккаунта</Text>
+          <Text style={styles.logoutActionText}>
+            {t(language, { ru: 'Выйти из аккаунта', en: 'Sign out', he: 'התנתקות מהחשבון' })}
+          </Text>
         </Pressable>
       </View>
 
       <View style={styles.profileInfoCard}>
-        <Text style={styles.profileInfoTitle}>Личное</Text>
+        <Text style={styles.profileInfoTitle}>{t(language, { ru: 'Личное', en: 'Personal', he: 'אישי' })}</Text>
         <TextInput
           value={profileNameDraft}
           onChangeText={setProfileNameDraft}
-          placeholder="Имя и фамилия"
+          placeholder={t(language, { ru: 'Имя и фамилия', en: 'Full name', he: 'שם מלא' })}
           style={styles.profileInput}
           editable={!profileSaving}
         />
         <TextInput
           value={profileEmailDraft}
           onChangeText={setProfileEmailDraft}
-          placeholder="Электронная почта"
+          placeholder={t(language, { ru: 'Электронная почта', en: 'Email', he: 'דוא"ל' })}
           keyboardType="email-address"
           autoCapitalize="none"
           style={styles.profileInput}
@@ -4325,7 +4385,7 @@ export function TeacherScreen({
         <TextInput
           value={profilePhoneDraft}
           onChangeText={setProfilePhoneDraft}
-          placeholder="Номер телефона"
+          placeholder={t(language, { ru: 'Номер телефона', en: 'Phone number', he: 'מספר טלפון' })}
           keyboardType="phone-pad"
           style={styles.profileInput}
           editable={!profileSaving}
@@ -4335,22 +4395,38 @@ export function TeacherScreen({
           disabled={profileSaving}
           onPress={() => void saveProfileInfo()}
         >
-          <Text style={styles.submitPrimaryButtonText}>{profileSaving ? 'Сохранение...' : 'Сохранить профиль'}</Text>
+          <Text style={styles.submitPrimaryButtonText}>
+            {profileSaving
+              ? t(language, { ru: 'Сохранение...', en: 'Saving...', he: 'שומר...' })
+              : t(language, { ru: 'Сохранить профиль', en: 'Save profile', he: 'שמור פרופיל' })}
+          </Text>
         </Pressable>
       </View>
 
       <BirthdaySettingsCard user={user} onSave={onUpdateBirthdaySettings} />
 
       <View style={styles.profileInfoCard}>
-        <Text style={styles.profileInfoTitle}>Предметы</Text>
-        <Text style={styles.profileInfoSub}>Удаление доступно только если нет будущих уроков по предмету.</Text>
+        <Text style={styles.profileInfoTitle}>{t(language, { ru: 'Предметы', en: 'Subjects', he: 'מקצועות' })}</Text>
+        <Text style={styles.profileInfoSub}>
+          {t(language, {
+            ru: 'Удаление доступно только если нет будущих уроков по предмету.',
+            en: 'You can delete a subject only if there are no future lessons for it.',
+            he: 'ניתן להסיר מקצוע רק אם אין שיעורים עתידיים למקצוע זה.',
+          })}
+        </Text>
         {normalizedTeachingDraft.length === 0 ? (
-          <Text style={styles.profileInfoSub}>Предметы появятся после добавления уроков.</Text>
+          <Text style={styles.profileInfoSub}>
+            {t(language, {
+              ru: 'Предметы появятся после добавления уроков.',
+              en: 'Subjects will appear after you add lessons.',
+              he: 'המקצועות יופיעו לאחר הוספת שיעורים.',
+            })}
+          </Text>
         ) : (
           <View style={styles.profileChipsWrap}>
             {normalizedTeachingDraft.map((subject) => (
               <View key={subject} style={styles.profileSubjectChipEditable}>
-                <Text style={styles.profileSubjectChipText}>{subject}</Text>
+                <Text style={styles.profileSubjectChipText}>{localizeSubjectName(subject)}</Text>
                 <Pressable
                   style={styles.profileSubjectRemoveButton}
                   disabled={teachingSubjectsSaving}
@@ -4362,7 +4438,9 @@ export function TeacherScreen({
             ))}
           </View>
         )}
-        <Text style={styles.profileInfoSub}>Список от администратора</Text>
+        <Text style={styles.profileInfoSub}>
+          {t(language, { ru: 'Список от администратора', en: 'Administrator list', he: 'רשימת מנהל' })}
+        </Text>
         <View style={styles.profileChipsWrap}>
           {availableAdminSubjects.map((subject) => {
             const selected = normalizedTeachingDraft.includes(subject);
@@ -4379,7 +4457,7 @@ export function TeacherScreen({
                     selected && styles.profileSubjectSelectChipTextActive,
                   ]}
                 >
-                  {subject}
+                  {localizeSubjectName(subject)}
                 </Text>
               </Pressable>
             );
@@ -4389,7 +4467,11 @@ export function TeacherScreen({
           <TextInput
             value={subjectOtherInput}
             onChangeText={setSubjectOtherInput}
-            placeholder="Другое (свой предмет)"
+            placeholder={t(language, {
+              ru: 'Другое (свой предмет)',
+              en: 'Other (custom subject)',
+              he: 'אחר (מקצוע מותאם)',
+            })}
             style={styles.profileSubjectInput}
             editable={!teachingSubjectsSaving}
           />
@@ -4401,7 +4483,9 @@ export function TeacherScreen({
             disabled={!subjectOtherInput.trim() || teachingSubjectsSaving}
             onPress={addCustomTeachingSubject}
           >
-            <Text style={styles.profileSubjectAddText}>Добавить другое</Text>
+            <Text style={styles.profileSubjectAddText}>
+              {t(language, { ru: 'Добавить другое', en: 'Add custom', he: 'הוסף מקצוע מותאם' })}
+            </Text>
           </Pressable>
         </View>
         <Pressable
@@ -4413,13 +4497,15 @@ export function TeacherScreen({
           onPress={() => void saveTeachingSubjects()}
         >
           <Text style={styles.submitPrimaryButtonText}>
-            {teachingSubjectsSaving ? 'Сохранение...' : 'Сохранить предметы'}
+            {teachingSubjectsSaving
+              ? t(language, { ru: 'Сохранение...', en: 'Saving...', he: 'שומר...' })
+              : t(language, { ru: 'Сохранить предметы', en: 'Save subjects', he: 'שמור מקצועות' })}
           </Text>
         </Pressable>
       </View>
 
       <View style={styles.profileInfoCard}>
-        <Text style={styles.profileInfoTitle}>Класс</Text>
+        <Text style={styles.profileInfoTitle}>{t(language, { ru: 'Класс', en: 'Class', he: 'כיתה' })}</Text>
         <Pressable
           style={[styles.profileHomeroomToggle, homeroomSaving && styles.profileHomeroomToggleDisabled]}
           onPress={toggleHomeroom}
@@ -4431,13 +4517,19 @@ export function TeacherScreen({
             color={homeroomOptIn ? '#16A34A' : '#64748B'}
           />
           <Text style={styles.profileHomeroomToggleText}>
-            {homeroomOptIn ? 'Вы классный руководитель' : 'Стать классным руководителем'}
+            {homeroomOptIn
+              ? t(language, { ru: 'Вы классный руководитель', en: 'You are a homeroom teacher', he: 'את/ה מחנך/ת כיתה' })
+              : t(language, {
+                  ru: 'Стать классным руководителем',
+                  en: 'Become a homeroom teacher',
+                  he: 'להיות מחנך/ת כיתה',
+                })}
           </Text>
         </Pressable>
 
         {homeroomOptIn ? (
           <>
-            <Text style={styles.profileInfoSub}>Выберите класс</Text>
+            <Text style={styles.profileInfoSub}>{t(language, { ru: 'Выберите класс', en: 'Select class', he: 'בחר/י כיתה' })}</Text>
             <View style={styles.profileChipsWrap}>
               {teacherClassModels.map((entry) => {
                 const selected = homeroomClassId === entry.id;
@@ -4451,16 +4543,20 @@ export function TeacherScreen({
                     }}
                   >
                     <Text style={[styles.profileClassChipText, selected && styles.profileClassChipTextActive]}>
-                      {entry.name}
+                      {entry.name_i18n?.[language] ?? entry.name}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
             {homeroomClassName ? (
-              <Text style={styles.profileInfoSubStrong}>Текущий класс: {homeroomClassName}</Text>
+              <Text style={styles.profileInfoSubStrong}>
+                {t(language, { ru: 'Текущий класс', en: 'Current class', he: 'כיתה נוכחית' })}: {homeroomClassName}
+              </Text>
             ) : null}
-            {homeroomSaving ? <Text style={styles.profileInfoSub}>Сохранение...</Text> : null}
+            {homeroomSaving ? (
+              <Text style={styles.profileInfoSub}>{t(language, { ru: 'Сохранение...', en: 'Saving...', he: 'שומר...' })}</Text>
+            ) : null}
           </>
         ) : null}
       </View>
@@ -4568,7 +4664,9 @@ export function TeacherScreen({
                 style={styles.bottomNavIcon}
               />
               {showMessagesDot ? <View style={styles.navMessageDot} /> : null}
-              <Text style={[styles.bottomNavLabel, active && styles.bottomNavLabelActive]}>{item.label}</Text>
+              <Text style={[styles.bottomNavLabel, active && styles.bottomNavLabelActive]}>
+                {tabLabel(item.key, language)}
+              </Text>
               <View style={[styles.activeDot, active && styles.activeDotVisible]} />
             </Pressable>
           );

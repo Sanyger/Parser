@@ -472,6 +472,41 @@ function detectByScript(text: string): AppLanguage {
   return 'en';
 }
 
+function scriptScore(text: string): Record<AppLanguage, number> {
+  let he = 0;
+  let ru = 0;
+  let en = 0;
+  for (const char of text) {
+    if (HEBREW_CHAR_RE.test(char)) {
+      he += 1;
+      continue;
+    }
+    if (CYRILLIC_CHAR_RE.test(char)) {
+      ru += 1;
+      continue;
+    }
+    if (LATIN_CHAR_RE.test(char)) {
+      en += 1;
+    }
+  }
+  return { he, ru, en };
+}
+
+function isScriptDominantForLanguage(text: string, language: AppLanguage): boolean {
+  const score = scriptScore(text);
+  const total = score.he + score.ru + score.en;
+  if (total === 0) {
+    return false;
+  }
+  if (language === 'ru') {
+    return score.ru > 0 && score.ru >= score.he && score.ru >= score.en;
+  }
+  if (language === 'he') {
+    return score.he > 0 && score.he >= score.ru && score.he >= score.en;
+  }
+  return score.en > 0 && score.en >= score.he && score.en >= score.ru;
+}
+
 function applyTokenCase(source: string, translated: string): string {
   if (!translated) {
     return translated;
@@ -682,6 +717,9 @@ export function ensureTranslationMap(
     if (targetLanguage === 'he' && (LATIN_CHAR_RE.test(candidate) || CYRILLIC_CHAR_RE.test(candidate))) {
       return false;
     }
+    if (targetLanguage !== resolvedOriginal && !isScriptDominantForLanguage(candidate, targetLanguage)) {
+      return false;
+    }
     return true;
   };
 
@@ -702,7 +740,30 @@ export function getLocalizedText(
   if (showOriginal) {
     return cleanOriginal;
   }
-  return translations[userLanguage] || cleanOriginal;
+  const originalLanguage = detectLanguage(cleanOriginal);
+  if (originalLanguage === userLanguage) {
+    return cleanOriginal;
+  }
+
+  const candidate = (translations[userLanguage] ?? '').trim();
+  if (!candidate) {
+    return translateText(cleanOriginal, userLanguage, originalLanguage);
+  }
+  if (hasLegacyPrefix(candidate)) {
+    return translateText(cleanOriginal, userLanguage, originalLanguage);
+  }
+
+  const normalizedOriginal = normalizeText(cleanOriginal);
+  const normalizedCandidate = normalizeText(candidate);
+  if (normalizedCandidate === normalizedOriginal) {
+    return translateText(cleanOriginal, userLanguage, originalLanguage);
+  }
+
+  if (!isScriptDominantForLanguage(candidate, userLanguage)) {
+    return translateText(cleanOriginal, userLanguage, originalLanguage);
+  }
+
+  return candidate;
 }
 
 export function localizePersonName(name: string, language: AppLanguage): string {
