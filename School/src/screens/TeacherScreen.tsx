@@ -32,7 +32,7 @@ import {
   lessonsForUser,
   todayLessons,
 } from '../lib/selectors';
-import { localizeLessonSubject, t } from '../lib/i18n';
+import { localizeLessonRoom, localizeLessonSubject, localeByLanguage, t } from '../lib/i18n';
 import {
   fromJerusalemDateTime,
   getDayIndexInJerusalem,
@@ -204,8 +204,32 @@ function tabLabel(tab: TeacherTab, language: User['preferred_language']): string
   return t(language, { ru: 'Профиль', en: 'Profile', he: 'פרופיל' });
 }
 
-function className(snapshot: DatabaseSnapshot, classId: string): string {
-  return snapshot.classes.find((entry) => entry.id === classId)?.name ?? classId;
+function fallbackLocalizedClassName(value: string, language: User['preferred_language']): string {
+  const clean = value.trim();
+  if (!clean) {
+    return clean;
+  }
+  const classWord = t(language, { ru: 'Класс', en: 'Class', he: 'כיתה' });
+  const suffix = clean.replace(/^(класс|class|כיתה)\s*/iu, '').trim();
+  if (!suffix) {
+    return classWord;
+  }
+  return `${classWord} ${suffix}`;
+}
+
+function className(
+  snapshot: DatabaseSnapshot,
+  classId: string,
+  language?: User['preferred_language'],
+): string {
+  const classModel = snapshot.classes.find((entry) => entry.id === classId);
+  if (!classModel) {
+    return classId;
+  }
+  if (!language) {
+    return classModel.name;
+  }
+  return classModel.name_i18n?.[language] ?? fallbackLocalizedClassName(classModel.name, language);
 }
 
 function parentRelationLabel(
@@ -400,12 +424,12 @@ function dateInputLabel(value: string): string {
   return `${match[3]}.${match[2]}`;
 }
 
-function dateShortLabel(value: string): string {
+function dateShortLabel(value: string, locale = 'ru-RU'): string {
   const parsed = parseDateInput(value);
   if (!parsed) {
     return dateInputLabel(value);
   }
-  const formatted = new Intl.DateTimeFormat('ru-RU', {
+  const formatted = new Intl.DateTimeFormat(locale, {
     day: 'numeric',
     month: 'short',
     timeZone: 'UTC',
@@ -774,6 +798,16 @@ export function TeacherScreen({
 }) {
   const initialScheduleDateInput = toJerusalemDateInput(new Date().toISOString());
   const language = user.preferred_language;
+  const uiLocale = useMemo(() => localeByLanguage(language), [language]);
+  const weekdayShortLabels = useMemo(() => {
+    if (language === 'he') {
+      return ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+    }
+    if (language === 'en') {
+      return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    }
+    return ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+  }, [language]);
   const [tab, setTab] = useState<TeacherTab>('home');
   const [selectedScheduleDateInput, setSelectedScheduleDateInput] = useState<string>(initialScheduleDateInput);
   const [scheduleMonthCursor, setScheduleMonthCursor] = useState<string>(
@@ -1039,7 +1073,7 @@ export function TeacherScreen({
         if (thread.class_id) {
           return {
             id: entry.id,
-            target: className(snapshot, thread.class_id),
+            target: className(snapshot, thread.class_id, language),
             text: getLocalizedText(
               entry.text_original,
               ensureTranslationMap(entry.text_original, entry.lang_original, entry.translations),
@@ -1080,10 +1114,10 @@ export function TeacherScreen({
     if (visual?.kind === 'replaced') {
       const match = visual.note.match(/"(.+?)"/);
       if (match?.[1]) {
-        return match[1];
+        return localizeSubjectName(match[1]);
       }
     }
-    return lesson.subject;
+    return localizeSubjectName(lesson.subject);
   };
 
   const nextLesson = useMemo(() => {
@@ -1110,16 +1144,16 @@ export function TeacherScreen({
     const diffDaysLocal = Math.round((startOfTarget - startOfToday) / DAY_MS);
 
     if (diffDaysLocal === 0) {
-      return 'сегодня';
+      return t(language, { ru: 'сегодня', en: 'today', he: 'היום' });
     }
     if (diffDaysLocal === 1) {
-      return 'завтра';
+      return t(language, { ru: 'завтра', en: 'tomorrow', he: 'מחר' });
     }
     if (diffDaysLocal === 2) {
-      return 'послезавтра';
+      return t(language, { ru: 'послезавтра', en: 'day after tomorrow', he: 'מחרתיים' });
     }
-    return dateShortLabel(toJerusalemDateInput(nextLesson.start_datetime));
-  }, [nextLesson]);
+    return dateShortLabel(toJerusalemDateInput(nextLesson.start_datetime), uiLocale);
+  }, [language, nextLesson, uiLocale]);
 
   const absentCountToday = useMemo(() => {
     const lessonIds = new Set(todayList.map((entry) => entry.id));
@@ -1327,11 +1361,11 @@ export function TeacherScreen({
 
           return {
             classId: classModel.id,
-            className: classModel.name,
+            className: className(snapshot, classModel.id, language),
             students: classStudents.length,
           };
         }),
-    [snapshot.classes, studentUsers, user.class_ids],
+    [language, snapshot, snapshot.classes, studentUsers, user.class_ids],
   );
 
   const classHomeworkMap = useMemo(() => {
@@ -1420,7 +1454,7 @@ export function TeacherScreen({
     );
   }, [selectedClassId, snapshot.absence, todayList]);
 
-  const selectedClassName = selectedClassId ? className(snapshot, selectedClassId) : '';
+  const selectedClassName = selectedClassId ? className(snapshot, selectedClassId, language) : '';
   const todayDateInput = useMemo(() => toJerusalemDateInput(new Date().toISOString()), []);
 
   const messagesForBadge = useMemo(
@@ -3494,23 +3528,41 @@ export function TeacherScreen({
             </Text>
             {isLive ? (
               <View style={styles.liveBadge}>
-                <Text style={styles.liveBadgeText}>LIVE</Text>
+                <Text style={styles.liveBadgeText}>
+                  {t(language, { ru: 'СЕЙЧАС', en: 'LIVE', he: 'חי' })}
+                </Text>
               </View>
             ) : null}
           </View>
           <Text style={styles.lessonSubMeta}>
             {isHolidayType
-              ? 'Выходной / каникулы'
+              ? t(language, { ru: 'Выходной / каникулы', en: 'Day off / holiday', he: 'יום חופשי / חופשה' })
               : isEventType
-                ? `${className(snapshot, lesson.class_id)} · ${lesson.room === '—' ? 'Мероприятие' : lesson.room}`
-                : `${className(snapshot, lesson.class_id)} · Каб. ${lesson.room}`}
+                ? `${className(snapshot, lesson.class_id, language)} · ${
+                    lesson.room === '—'
+                      ? t(language, { ru: 'Мероприятие', en: 'Event', he: 'אירוע' })
+                      : localizeLessonRoom(lesson.room, language)
+                  }`
+                : `${className(snapshot, lesson.class_id, language)} · ${t(language, {
+                    ru: 'Каб.',
+                    en: 'Room',
+                    he: 'חדר',
+                  })} ${localizeLessonRoom(lesson.room, language)}`}
           </Text>
           {isCanceled ? (
-            <Text style={styles.lessonCanceledText}>Отмена урока</Text>
+            <Text style={styles.lessonCanceledText}>
+              {t(language, { ru: 'Отмена урока', en: 'Lesson canceled', he: 'השיעור בוטל' })}
+            </Text>
           ) : null}
           {showTransfer ? (
             <Text style={styles.changedText}>
-              {visualState?.note ? visualState.note : `Замена/перенос на ${startLabel}`}
+              {visualState?.note
+                ? visualState.note
+                : t(language, {
+                    ru: `Замена/перенос на ${startLabel}`,
+                    en: `Rescheduled to ${startLabel}`,
+                    he: `הועבר לשעה ${startLabel}`,
+                  })}
             </Text>
           ) : null}
 
@@ -3520,18 +3572,24 @@ export function TeacherScreen({
                   style={styles.lessonHomeworkReadyChip}
                   onPress={() => openHomeworkModalForLesson(lesson, latestLessonHomeworkId)}
                 >
-                  <Text style={styles.lessonHomeworkReady}>ДЗ есть • посмотреть</Text>
+                  <Text style={styles.lessonHomeworkReady}>
+                    {t(language, { ru: 'ДЗ есть • посмотреть', en: 'Homework • view', he: 'יש שיעורי בית • צפייה' })}
+                  </Text>
                 </Pressable>
               ) : (
                 <Pressable
                   style={styles.lessonHomeworkEmptyChip}
                   onPress={() => openHomeworkModalForLesson(lesson)}
                 >
-                  <Text style={styles.lessonHomeworkEmptyText}>Нет ДЗ • добавить</Text>
+                  <Text style={styles.lessonHomeworkEmptyText}>
+                    {t(language, { ru: 'Нет ДЗ • добавить', en: 'No homework • add', he: 'אין שיעורי בית • הוסף' })}
+                  </Text>
                 </Pressable>
               )
             : (
-                <Text style={styles.lessonHolidayNote}>Выходной день</Text>
+                <Text style={styles.lessonHolidayNote}>
+                  {t(language, { ru: 'Выходной день', en: 'Day off', he: 'יום חופשי' })}
+                </Text>
               )}
         </View>
 
@@ -3543,13 +3601,15 @@ export function TeacherScreen({
           </View>
         ) : (
           <View style={styles.lessonTimeWrap}>
-            <Text style={styles.lessonHolidayTime}>весь день</Text>
+            <Text style={styles.lessonHolidayTime}>
+              {t(language, { ru: 'весь день', en: 'all day', he: 'כל היום' })}
+            </Text>
           </View>
         )}
 
         {isReplaced ? (
           <View style={styles.replacedBadge}>
-            <Text style={styles.replacedBadgeText}>Замена</Text>
+            <Text style={styles.replacedBadgeText}>{t(language, { ru: 'Замена', en: 'Replacement', he: 'החלפה' })}</Text>
           </View>
         ) : null}
       </Pressable>
@@ -3582,16 +3642,20 @@ export function TeacherScreen({
                 void markParentMessageRead(featuredParentMessage);
               }}
             >
-              <Text style={styles.parentActionText}>Прочитано</Text>
+              <Text style={styles.parentActionText}>{t(language, { ru: 'Прочитано', en: 'Read', he: 'נקרא' })}</Text>
             </Pressable>
             <Pressable style={styles.parentActionButton} onPress={() => openReplyModal(featuredParentMessage)}>
-              <Text style={styles.parentActionText}>Написать ответ</Text>
+              <Text style={styles.parentActionText}>
+                {t(language, { ru: 'Написать ответ', en: 'Reply', he: 'השב/י' })}
+              </Text>
             </Pressable>
             <Pressable
               style={[styles.parentActionButton, styles.parentActionGhost]}
               onPress={() => setTab('tasks')}
             >
-              <Text style={styles.parentActionGhostText}>Перейти в сообщения</Text>
+              <Text style={styles.parentActionGhostText}>
+                {t(language, { ru: 'Перейти в сообщения', en: 'Open messages', he: 'מעבר להודעות' })}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -3599,36 +3663,42 @@ export function TeacherScreen({
 
       <View style={styles.statsGrid}>
         <View style={styles.bigStatCard}>
-          <Text style={styles.statLabel}>СЕЙЧАС</Text>
-          <Text style={styles.statValue}>{current ? `${current.subject}, ${current.room}` : 'Нет урока'}</Text>
+          <Text style={styles.statLabel}>{t(language, { ru: 'СЕЙЧАС', en: 'NOW', he: 'עכשיו' })}</Text>
+          <Text style={styles.statValue}>
+            {current
+              ? `${lessonDisplaySubject(current)} · ${localizeLessonRoom(current.room, language)}`
+              : t(language, { ru: 'Нет урока', en: 'No lesson', he: 'אין שיעור' })}
+          </Text>
         </View>
 
         <View style={styles.bigStatCard}>
           <View style={styles.nextLessonTopRow}>
-            <Text style={styles.statLabel}>СЛЕДУЮЩИЙ</Text>
+            <Text style={styles.statLabel}>{t(language, { ru: 'СЛЕДУЮЩИЙ', en: 'NEXT', he: 'הבא' })}</Text>
             <Pressable
               onPress={() => {
                 setTab('schedule');
               }}
             >
-              <Text style={styles.nextLessonLink}>Перейти в расписание</Text>
+              <Text style={styles.nextLessonLink}>
+                {t(language, { ru: 'Перейти в расписание', en: 'Go to schedule', he: 'מעבר למערכת' })}
+              </Text>
             </Pressable>
           </View>
           <Text style={styles.statValue}>
             {nextLesson
               ? `${lessonDisplaySubject(nextLesson)} · ${hhmm(nextLesson.start_datetime)} (${nextLessonWhen})`
-              : 'Уроков нет'}
+              : t(language, { ru: 'Уроков нет', en: 'No lessons', he: 'אין שיעורים' })}
           </Text>
         </View>
 
         <View style={styles.smallStatsRow}>
           <View style={styles.smallStatCard}>
-            <Text style={styles.smallStatLabel}>Уроков</Text>
+            <Text style={styles.smallStatLabel}>{t(language, { ru: 'Уроков', en: 'Lessons', he: 'שיעורים' })}</Text>
             <Text style={styles.smallStatValue}>{todayList.length}</Text>
           </View>
 
           <Pressable style={styles.smallStatCard} onPress={() => setTab('classes')}>
-            <Text style={styles.smallStatLabel}>Детей</Text>
+            <Text style={styles.smallStatLabel}>{t(language, { ru: 'Детей', en: 'Students', he: 'תלמידים' })}</Text>
             <Text style={styles.smallStatValue}>{studentUsers.length}</Text>
           </Pressable>
 
@@ -3639,7 +3709,7 @@ export function TeacherScreen({
               adjustsFontSizeToFit
               minimumFontScale={0.8}
             >
-              Не будет
+              {t(language, { ru: 'Не будет', en: 'Absent', he: 'ייעדרו' })}
             </Text>
             <Text style={styles.smallStatValue}>{absentCountToday}</Text>
           </View>
@@ -3647,7 +3717,7 @@ export function TeacherScreen({
       </View>
 
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Уроки на сегодня</Text>
+        <Text style={styles.sectionTitle}>{t(language, { ru: 'Уроки на сегодня', en: 'Today lessons', he: 'שיעורים להיום' })}</Text>
         <Pressable
           onPress={() => {
             const todayInput = toJerusalemDateInput(new Date().toISOString());
@@ -3656,7 +3726,7 @@ export function TeacherScreen({
             setScheduleMonthCursor(monthCursorFromDateInput(todayInput));
           }}
         >
-          <Text style={styles.sectionAction}>Календарь</Text>
+          <Text style={styles.sectionAction}>{t(language, { ru: 'Календарь', en: 'Calendar', he: 'לוח שנה' })}</Text>
         </Pressable>
       </View>
 
@@ -3664,7 +3734,7 @@ export function TeacherScreen({
         {todayList.length === 0 ? (
           <View style={styles.emptyBlock}>
             <Ionicons name="moon-outline" size={24} color={COLORS.textMuted} />
-            <Text style={styles.emptyText}>На сегодня уроков нет</Text>
+            <Text style={styles.emptyText}>{t(language, { ru: 'На сегодня уроков нет', en: 'No lessons today', he: 'אין שיעורים היום' })}</Text>
           </View>
         ) : (
           todayList.map((lesson, index) => renderLessonCard(lesson, index))
@@ -3676,14 +3746,21 @@ export function TeacherScreen({
         onPress={() => {
           const lesson = homeworkLessonOptions[0];
           if (!lesson) {
-            Alert.alert('Нет доступных предметов', 'Добавьте предмет в профиле и урок в расписании.');
+            Alert.alert(
+              t(language, { ru: 'Нет доступных предметов', en: 'No subjects available', he: 'אין מקצועות זמינים' }),
+              t(language, {
+                ru: 'Добавьте предмет в профиле и урок в расписании.',
+                en: 'Add a subject in profile and a lesson in schedule.',
+                he: 'הוסף/י מקצוע בפרופיל ושיעור במערכת.',
+              }),
+            );
             return;
           }
           openHomeworkModalForLesson(lesson);
         }}
       >
         <Ionicons name="create-outline" size={18} color="#fff" />
-        <Text style={styles.quickHomeworkText}>Дать задание</Text>
+        <Text style={styles.quickHomeworkText}>{t(language, { ru: 'Дать задание', en: 'Assign homework', he: 'תן/י משימה' })}</Text>
       </Pressable>
 
       <Pressable style={styles.suggestionBanner} onPress={() => setSuggestionsVisible(true)}>
@@ -3697,8 +3774,12 @@ export function TeacherScreen({
             <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={COLORS.violet} />
           </View>
           <View style={styles.suggestionBannerTextWrap}>
-            <Text style={styles.suggestionBannerTitle}>Есть идея или просьба?</Text>
-            <Text style={styles.suggestionBannerText}>Напишите администрации</Text>
+            <Text style={styles.suggestionBannerTitle}>
+              {t(language, { ru: 'Есть идея или просьба?', en: 'Have an idea or request?', he: 'יש רעיון או בקשה?' })}
+            </Text>
+            <Text style={styles.suggestionBannerText}>
+              {t(language, { ru: 'Напишите администрации', en: 'Write to administration', he: 'כתבו להנהלה' })}
+            </Text>
           </View>
           <Feather name="arrow-right" size={18} color={COLORS.violet} />
         </LinearGradient>
@@ -3708,7 +3789,7 @@ export function TeacherScreen({
 
   const birthdayRoleText = (entry: User): string => {
     if (entry.role_id === 5) {
-      return className(snapshot, entry.class_ids[0] ?? '');
+      return className(snapshot, entry.class_ids[0] ?? '', language);
     }
     if (entry.role_id === 1) {
       return 'Директор';
@@ -4071,7 +4152,8 @@ export function TeacherScreen({
               >
                 <Text style={styles.taskTitle}>{lesson?.subject ?? 'Урок'}</Text>
                 <Text style={styles.taskMeta}>
-                  Класс: {lesson ? className(snapshot, lesson.class_id) : item.class_id}
+                  {t(language, { ru: 'Класс', en: 'Class', he: 'כיתה' })}:{' '}
+                  {lesson ? className(snapshot, lesson.class_id, language) : item.class_id}
                 </Text>
                 <Text style={styles.taskText} numberOfLines={2}>
                   {parseHomeworkText(item.text).body || item.text}
@@ -4909,7 +4991,7 @@ export function TeacherScreen({
                   </View>
                   <View style={styles.infoBlock}>
                     <Text style={styles.infoBlockLabel}>Класс</Text>
-                    <Text style={styles.infoBlockValue}>{className(snapshot, selectedLesson.class_id)}</Text>
+                    <Text style={styles.infoBlockValue}>{className(snapshot, selectedLesson.class_id, language)}</Text>
                   </View>
                   <View style={styles.infoBlock}>
                     <Text style={styles.infoBlockLabel}>Кабинет</Text>
@@ -5111,7 +5193,7 @@ export function TeacherScreen({
                 </Pressable>
               </View>
               <View style={styles.modalHeaderRow}>
-                <Text style={styles.modalTitle}>Добавить задание</Text>
+                <Text style={styles.modalTitle}>{t(language, { ru: 'Добавить задание', en: 'Add homework', he: 'הוספת משימה' })}</Text>
               </View>
 
                   <View style={styles.homeworkScrollArea}>
@@ -5146,7 +5228,9 @@ export function TeacherScreen({
                       ]}
                       showsVerticalScrollIndicator={false}
                     >
-                    <Text style={styles.modalSectionTitle}>Выбор урока</Text>
+                    <Text style={styles.modalSectionTitle}>
+                      {t(language, { ru: 'Выбор урока', en: 'Lesson selection', he: 'בחירת שיעור' })}
+                    </Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.daysRow}>
                       {homeworkSubjectOptions.map((subject) => {
                         const selected =
@@ -5159,7 +5243,7 @@ export function TeacherScreen({
                             onPress={() => onHomeworkSubjectChange(subject)}
                           >
                             <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>
-                              {subject}
+                              {localizeSubjectName(subject)}
                             </Text>
                           </Pressable>
                         );
@@ -5169,12 +5253,12 @@ export function TeacherScreen({
                         onPress={() => openHomeworkModalForClassTask(homeworkClassId || '')}
                       >
                         <Text style={[styles.optionChipText, homeworkClassTaskMode && styles.optionChipTextActive]}>
-                          Другое задание
+                          {t(language, { ru: 'Другое задание', en: 'Custom task', he: 'משימה אחרת' })}
                         </Text>
                       </Pressable>
                     </ScrollView>
 
-                    <Text style={styles.modalSectionTitle}>Класс</Text>
+                    <Text style={styles.modalSectionTitle}>{t(language, { ru: 'Класс', en: 'Class', he: 'כיתה' })}</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.daysRow}>
                       {teacherClassModels.map((classModel) => {
                         const selected = homeworkClassId === classModel.id;
@@ -5185,7 +5269,7 @@ export function TeacherScreen({
                             onPress={() => onHomeworkClassChange(classModel.id)}
                           >
                             <Text style={[styles.optionChipText, selected && styles.optionChipGreenTextActive]}>
-                              {classModel.name}
+                              {className(snapshot, classModel.id, language)}
                             </Text>
                           </Pressable>
                         );
@@ -5195,11 +5279,17 @@ export function TeacherScreen({
                     <View style={styles.lessonSummaryCard}>
                       <Text style={styles.lessonSummaryTitle}>
                         {homeworkClassTaskMode
-                          ? 'Задание для класса'
-                          : homeworkSubjectDraft || (selectedLesson ? lessonDisplaySubject(selectedLesson) : 'Выберите урок')}
+                          ? t(language, { ru: 'Задание для класса', en: 'Class homework', he: 'משימה לכיתה' })
+                          : homeworkSubjectDraft
+                            ? localizeSubjectName(homeworkSubjectDraft)
+                            : selectedLesson
+                              ? lessonDisplaySubject(selectedLesson)
+                              : t(language, { ru: 'Выберите урок', en: 'Select lesson', he: 'בחר/י שיעור' })}
                       </Text>
                       <Text style={styles.lessonSummaryMeta}>
-                        {homeworkClassId ? className(snapshot, homeworkClassId) : 'Класс не выбран'}
+                        {homeworkClassId
+                          ? className(snapshot, homeworkClassId, language)
+                          : t(language, { ru: 'Класс не выбран', en: 'Class not selected', he: 'לא נבחרה כיתה' })}
                       </Text>
                     </View>
 
@@ -5214,7 +5304,10 @@ export function TeacherScreen({
                           ]}
                           onPress={() => openHomeworkDuePicker('given')}
                         >
-                          <Text style={styles.homeworkIssuedText}>📅 Выдано: {dateShortLabel(homeworkGivenDate)}</Text>
+                          <Text style={styles.homeworkIssuedText}>
+                            📅 {t(language, { ru: 'Выдано', en: 'Assigned', he: 'ניתן' })}:{' '}
+                            {dateShortLabel(homeworkGivenDate, uiLocale)}
+                          </Text>
                         </Pressable>
                         <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
                         <Pressable
@@ -5226,7 +5319,10 @@ export function TeacherScreen({
                           ]}
                           onPress={() => openHomeworkDuePicker('due')}
                         >
-                          <Text style={styles.homeworkDeadlineText}>🏁 Срок: {dateShortLabel(homeworkDueDate)}</Text>
+                          <Text style={styles.homeworkDeadlineText}>
+                            🏁 {t(language, { ru: 'Срок', en: 'Due', he: 'תאריך יעד' })}:{' '}
+                            {dateShortLabel(homeworkDueDate, uiLocale)}
+                          </Text>
                         </Pressable>
                       </View>
                       <View style={styles.homeworkQuickDatesRow}>
@@ -5239,7 +5335,9 @@ export function TeacherScreen({
                             setHomeworkDuePickerVisible(false);
                           }}
                         >
-                          <Text style={styles.homeworkQuickDateChipText}>+1 день</Text>
+                          <Text style={styles.homeworkQuickDateChipText}>
+                            {t(language, { ru: '+1 день', en: '+1 day', he: '+יום 1' })}
+                          </Text>
                         </Pressable>
                         <Pressable
                           style={styles.homeworkQuickDateChip}
@@ -5250,7 +5348,9 @@ export function TeacherScreen({
                             setHomeworkDuePickerVisible(false);
                           }}
                         >
-                          <Text style={styles.homeworkQuickDateChipText}>+2 дня</Text>
+                          <Text style={styles.homeworkQuickDateChipText}>
+                            {t(language, { ru: '+2 дня', en: '+2 days', he: '+2 ימים' })}
+                          </Text>
                         </Pressable>
                         <Pressable
                           style={styles.homeworkQuickDateChip}
@@ -5260,7 +5360,9 @@ export function TeacherScreen({
                             setHomeworkDuePickerVisible(false);
                           }}
                         >
-                          <Text style={styles.homeworkQuickDateChipText}>На след. урок</Text>
+                          <Text style={styles.homeworkQuickDateChipText}>
+                            {t(language, { ru: 'На след. урок', en: 'Next lesson', he: 'לשיעור הבא' })}
+                          </Text>
                         </Pressable>
                       </View>
 
@@ -5283,7 +5385,7 @@ export function TeacherScreen({
                           </View>
 
                           <View style={styles.compactCalendarWeekdaysRow}>
-                            {['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'].map((day) => (
+                            {weekdayShortLabels.map((day) => (
                               <Text key={day} style={styles.compactCalendarWeekdayText}>
                                 {day}
                               </Text>
@@ -5342,7 +5444,9 @@ export function TeacherScreen({
                       ) : null}
                     </View>
 
-                    <Text style={styles.modalSectionTitle}>Текст задания</Text>
+                    <Text style={styles.modalSectionTitle}>
+                      {t(language, { ru: 'Текст задания', en: 'Homework text', he: 'טקסט המשימה' })}
+                    </Text>
                     <View
                       onLayout={(event) => {
                         homeworkInputAnchorYRef.current = event.nativeEvent.layout.y;
@@ -5351,7 +5455,11 @@ export function TeacherScreen({
                       <TextInput
                         value={homeworkDraftText}
                         onChangeText={onHomeworkDraftTextChange}
-                        placeholder="Опишите задание..."
+                        placeholder={t(language, {
+                          ru: 'Опишите задание...',
+                          en: 'Describe the homework...',
+                          he: 'תאר/י את המשימה...',
+                        })}
                         placeholderTextColor={COLORS.textMuted}
                         style={[styles.modalInput, styles.multilineInput, { height: homeworkInputHeight }]}
                         multiline
@@ -5386,7 +5494,13 @@ export function TeacherScreen({
                     >
                       <Ionicons name="camera-outline" size={18} color={COLORS.violet} />
                       <Text style={[styles.attachButtonText, homeworkPhotoBusy && styles.attachButtonTextActive]}>
-                        {homeworkPhotoBusy ? 'Открываем камеру...' : 'Снять фото и прикрепить'}
+                        {homeworkPhotoBusy
+                          ? t(language, { ru: 'Открываем камеру...', en: 'Opening camera...', he: 'פותח מצלמה...' })
+                          : t(language, {
+                              ru: 'Снять фото и прикрепить',
+                              en: 'Take photo and attach',
+                              he: 'צלם/י וצרף/י',
+                            })}
                       </Text>
                     </Pressable>
                     <Pressable
@@ -5427,10 +5541,10 @@ export function TeacherScreen({
                         ]}
                       >
                         {homeworkSpeechBusy
-                          ? 'Подождите...'
+                          ? t(language, { ru: 'Подождите...', en: 'Please wait...', he: 'נא להמתין...' })
                           : homeworkSpeechRecording
-                            ? 'Остановить запись'
-                            : 'Записать задание'}
+                            ? t(language, { ru: 'Остановить запись', en: 'Stop recording', he: 'עצור הקלטה' })
+                            : t(language, { ru: 'Записать задание', en: 'Record homework', he: 'הקלט/י משימה' })}
                       </Text>
                     </Pressable>
                     {homeworkPhotoUri ? (
@@ -5446,7 +5560,9 @@ export function TeacherScreen({
                           />
                         </Pressable>
                         <View style={styles.audioPreviewBody}>
-                          <Text style={styles.audioPreviewTitle}>Аудио прикреплено</Text>
+                          <Text style={styles.audioPreviewTitle}>
+                            {t(language, { ru: 'Аудио прикреплено', en: 'Audio attached', he: 'אודיו צורף' })}
+                          </Text>
                           <Text style={styles.audioPreviewText} numberOfLines={1}>
                             {homeworkAudioUri}
                           </Text>
@@ -5484,26 +5600,38 @@ export function TeacherScreen({
                       onPress={() => void submitHomeworkForLesson()}
                     >
                       <Text style={styles.submitPrimaryButtonText}>
-                        {homeworkSubmitSuccess ? '✅ Отправлено' : 'Сохранить'}
+                        {homeworkSubmitSuccess
+                          ? t(language, { ru: '✅ Отправлено', en: '✅ Sent', he: '✅ נשלח' })
+                          : t(language, { ru: 'Сохранить', en: 'Save', he: 'שמור' })}
                       </Text>
                     </Pressable>
                     {editingHomeworkId ? (
                       <Pressable
                         style={styles.homeworkDeleteLink}
                         onPress={() =>
-                          Alert.alert('Удалить задание?', 'Это действие нельзя отменить.', [
-                            { text: 'Отмена', style: 'cancel' },
+                          Alert.alert(
+                            t(language, { ru: 'Удалить задание?', en: 'Delete homework?', he: 'למחוק את המשימה?' }),
+                            t(language, {
+                              ru: 'Это действие нельзя отменить.',
+                              en: 'This action cannot be undone.',
+                              he: 'לא ניתן לבטל פעולה זו.',
+                            }),
+                            [
+                              { text: t(language, { ru: 'Отмена', en: 'Cancel', he: 'ביטול' }), style: 'cancel' },
                             {
-                              text: 'Удалить',
+                              text: t(language, { ru: 'Удалить', en: 'Delete', he: 'מחק' }),
                               style: 'destructive',
                               onPress: () => {
                                 void deleteHomeworkEntry();
                               },
                             },
-                          ])
+                            ],
+                          )
                         }
                       >
-                        <Text style={styles.homeworkDeleteLinkText}>Удалить задание</Text>
+                        <Text style={styles.homeworkDeleteLinkText}>
+                          {t(language, { ru: 'Удалить задание', en: 'Delete homework', he: 'מחק משימה' })}
+                        </Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -5512,7 +5640,9 @@ export function TeacherScreen({
             <InputAccessoryView nativeID={HOMEWORK_INPUT_ACCESSORY_ID}>
               <View style={styles.keyboardAccessoryBar}>
                 <Pressable style={styles.keyboardAccessoryDoneButton} onPress={Keyboard.dismiss}>
-                  <Text style={styles.keyboardAccessoryDoneText}>Done</Text>
+                  <Text style={styles.keyboardAccessoryDoneText}>
+                    {t(language, { ru: 'Готово', en: 'Done', he: 'סיום' })}
+                  </Text>
                 </Pressable>
               </View>
             </InputAccessoryView>
