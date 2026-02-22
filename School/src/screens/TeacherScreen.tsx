@@ -39,6 +39,7 @@ import {
   toJerusalemDateInput,
   toJerusalemTimeInput,
 } from '../lib/time';
+import { defaultLessonEntriesForDay, lessonEntriesForDay } from '../lib/lessonSettings';
 import { ensureTranslationMap, getLocalizedText, localizePersonName } from '../lib/translation';
 import {
   DatabaseSnapshot,
@@ -147,17 +148,7 @@ const DAY_CHIPS = [
   { index: 5, label: 'Пт' },
   { index: 6, label: 'Сб' },
 ] as const;
-
-const TIME_SLOT_OPTIONS = [
-  { label: '08:00 – 08:45', start: '08:00', end: '08:45' },
-  { label: '08:55 – 09:40', start: '08:55', end: '09:40' },
-  { label: '09:50 – 10:35', start: '09:50', end: '10:35' },
-  { label: '10:45 – 11:30', start: '10:45', end: '11:30' },
-  { label: '11:40 – 12:25', start: '11:40', end: '12:25' },
-  { label: '12:35 – 13:20', start: '12:35', end: '13:20' },
-  { label: '13:30 – 14:15', start: '13:30', end: '14:15' },
-  { label: '14:25 – 15:10', start: '14:25', end: '15:10' },
-] as const;
+const FALLBACK_TIME_SLOT = { start: '08:00', end: '09:40' } as const;
 
 interface SchoolCalendarRange {
   id: string;
@@ -179,6 +170,41 @@ const SCHOOL_CALENDAR_RANGES: SchoolCalendarRange[] = [
   { id: 'summer_mid_high_2026', startInput: '2026-06-19', endInput: '2026-06-30', label: 'Летние каникулы (средняя/старшая)', icon: '☀️' },
   { id: 'summer_primary_2026', startInput: '2026-07-01', endInput: '2026-08-31', label: 'Летние каникулы (начальная)', icon: '🌻' },
 ];
+
+function schoolRangeLabel(
+  range: SchoolCalendarRange,
+  language: User['preferred_language'],
+): string {
+  const dictionary: Record<string, { ru: string; en: string; he: string }> = {
+    rosh_hashana_2025: { ru: 'Рош а-Шана', en: 'Rosh Hashanah', he: 'ראש השנה' },
+    sukkot_2025: { ru: 'Йом Кипур / Суккот', en: 'Yom Kippur / Sukkot', he: 'יום כיפור / סוכות' },
+    hanukkah_2025: { ru: 'Ханука', en: 'Hanukkah', he: 'חנוכה' },
+    purim_2026: { ru: 'Пурим', en: 'Purim', he: 'פורים' },
+    pesach_2026: { ru: 'Песах', en: 'Passover', he: 'פסח' },
+    zikaron_atzmaut_2026: {
+      ru: 'Йом а-Зикарон / а-Ацмаут',
+      en: 'Yom HaZikaron / Yom HaAtzmaut',
+      he: 'יום הזיכרון / יום העצמאות',
+    },
+    lag_baomer_2026: { ru: 'Лаг ба-Омер', en: 'Lag BaOmer', he: 'ל״ג בעומר' },
+    shavuot_2026: { ru: 'Шавуот', en: 'Shavuot', he: 'שבועות' },
+    summer_mid_high_2026: {
+      ru: 'Летние каникулы (средняя/старшая)',
+      en: 'Summer break (middle/high)',
+      he: 'חופשת קיץ (חטיבה/תיכון)',
+    },
+    summer_primary_2026: {
+      ru: 'Летние каникулы (начальная)',
+      en: 'Summer break (primary)',
+      he: 'חופשת קיץ (יסודי)',
+    },
+  };
+  const item = dictionary[range.id];
+  if (!item) {
+    return range.label;
+  }
+  return item[language];
+}
 
 const NAV_ITEMS: Array<{ key: TeacherTab; icon: keyof typeof Ionicons.glyphMap }> = [
   { key: 'home', icon: 'home-outline' },
@@ -357,11 +383,12 @@ function isBirthdayGreetingText(text: string): boolean {
 function emptyLessonDraft(primaryClassId: string): LessonDraft {
   const todayInput = toJerusalemDateInput(new Date().toISOString());
   const selectedDay = dayIndexFromDateInput(todayInput);
+  const firstSlot = defaultLessonEntriesForDay(selectedDay)[0];
   return {
     dateInput: todayInput,
     dayIndex: selectedDay,
-    startTime: '08:00',
-    endTime: '08:45',
+    startTime: firstSlot?.start_time ?? FALLBACK_TIME_SLOT.start,
+    endTime: firstSlot?.end_time ?? FALLBACK_TIME_SLOT.end,
     subject: '',
     customSubject: '',
     classId: primaryClassId,
@@ -527,7 +554,7 @@ function endOfMonthDateInput(cursor: string): string {
   return formatDateInput(end);
 }
 
-function monthLabelFromCursor(cursor: string): string {
+function monthLabelFromCursor(cursor: string, locale = 'ru-RU'): string {
   const match = cursor.match(/^(\d{4})-(\d{2})$/);
   if (!match) {
     return cursor;
@@ -535,7 +562,7 @@ function monthLabelFromCursor(cursor: string): string {
   const year = Number.parseInt(match[1], 10);
   const month = Number.parseInt(match[2], 10);
   const date = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0));
-  const value = new Intl.DateTimeFormat('ru-RU', {
+  const value = new Intl.DateTimeFormat(locale, {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
@@ -543,7 +570,7 @@ function monthLabelFromCursor(cursor: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function monthNameFromCursor(cursor: string): string {
+function monthNameFromCursor(cursor: string, locale = 'ru-RU'): string {
   const match = cursor.match(/^(\d{4})-(\d{2})$/);
   if (!match) {
     return cursor;
@@ -551,7 +578,7 @@ function monthNameFromCursor(cursor: string): string {
   const year = Number.parseInt(match[1], 10);
   const month = Number.parseInt(match[2], 10);
   const date = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0));
-  const value = new Intl.DateTimeFormat('ru-RU', {
+  const value = new Intl.DateTimeFormat(locale, {
     month: 'long',
     timeZone: 'UTC',
   }).format(date);
@@ -1022,7 +1049,9 @@ export function TeacherScreen({
           message.sender_id === user.id
             ? thread.participants.find((participant) => participant !== user.id) ?? message.sender_id
             : message.sender_id;
-        const peerName = usersById.get(peerUserId)?.name ?? 'Пользователь';
+        const peerName =
+          usersById.get(peerUserId)?.name ??
+          t(language, { ru: 'Пользователь', en: 'User', he: 'משתמש/ת' });
         return {
           id: message.id,
           threadId: message.thread_id,
@@ -1229,12 +1258,12 @@ export function TeacherScreen({
   );
 
   const scheduleMonthLabel = useMemo(
-    () => monthLabelFromCursor(scheduleMonthCursor),
-    [scheduleMonthCursor],
+    () => monthLabelFromCursor(scheduleMonthCursor, uiLocale),
+    [scheduleMonthCursor, uiLocale],
   );
   const scheduleMonthName = useMemo(
-    () => monthNameFromCursor(scheduleMonthCursor),
-    [scheduleMonthCursor],
+    () => monthNameFromCursor(scheduleMonthCursor, uiLocale),
+    [scheduleMonthCursor, uiLocale],
   );
   const scheduleYearValue = useMemo(
     () => yearFromCursor(scheduleMonthCursor),
@@ -1288,10 +1317,13 @@ export function TeacherScreen({
         continue;
       }
       const dateInput = toJerusalemDateInput(lesson.start_datetime);
-      map.set(dateInput, lesson.subject || 'Выходной');
+      map.set(
+        dateInput,
+        lesson.subject || t(language, { ru: 'Выходной', en: 'Day off', he: 'יום חופשי' }),
+      );
     }
     return map;
-  }, [lessonVisualState, teacherLessons]);
+  }, [language, lessonVisualState, teacherLessons]);
 
   const persistedTeachingSubjects = useMemo(
     () => normalizeSubjectNames(user.teaching_subjects ?? []),
@@ -1351,6 +1383,36 @@ export function TeacherScreen({
     () => (inferredTeachingSubjects.length > 0 ? inferredTeachingSubjects : availableAdminSubjects),
     [inferredTeachingSubjects, availableAdminSubjects],
   );
+
+  const bellSlotsByDay = useMemo(() => {
+    const map = new Map<number, ReturnType<typeof lessonEntriesForDay>>();
+    DAY_CHIPS.forEach((day) => {
+      const daySlots = lessonEntriesForDay(snapshot.lesson_settings, day.index);
+      map.set(day.index, daySlots.length > 0 ? daySlots : defaultLessonEntriesForDay(day.index));
+    });
+    return map;
+  }, [snapshot.lesson_settings]);
+
+  const defaultTimeSlotForDay = useCallback(
+    (dayIndex: number) => {
+      const slots = bellSlotsByDay.get(dayIndex);
+      const first = slots?.[0];
+      if (first) {
+        return { start: first.start_time, end: first.end_time };
+      }
+      return { ...FALLBACK_TIME_SLOT };
+    },
+    [bellSlotsByDay],
+  );
+
+  const draftTimeSlotOptions = useMemo(() => {
+    const slots = bellSlotsByDay.get(draft.dayIndex) ?? [];
+    return slots.map((slot) => ({
+      label: `${slot.start_time} – ${slot.end_time}`,
+      start: slot.start_time,
+      end: slot.end_time,
+    }));
+  }, [bellSlotsByDay, draft.dayIndex]);
 
   const classStats = useMemo(
     () =>
@@ -1718,6 +1780,7 @@ export function TeacherScreen({
   const openNewLessonModal = () => {
     const targetDateInput = selectedScheduleDateInput || toJerusalemDateInput(new Date().toISOString());
     const targetDay = dayIndexFromDateInput(targetDateInput);
+    const defaultSlot = defaultTimeSlotForDay(targetDay);
     setDraft((current) => {
       const base = emptyLessonDraft(user.class_ids[0] ?? '');
       const firstSubject = subjects[0] ?? '';
@@ -1725,6 +1788,8 @@ export function TeacherScreen({
         ...base,
         dateInput: targetDateInput,
         dayIndex: targetDay,
+        startTime: defaultSlot.start,
+        endTime: defaultSlot.end,
         type: 'lesson',
         room: 'Кабинет 1',
         subject: firstSubject || current.subject || '',
@@ -1737,12 +1802,15 @@ export function TeacherScreen({
   const openNewEventModal = () => {
     const targetDateInput = selectedScheduleDateInput || toJerusalemDateInput(new Date().toISOString());
     const targetDay = dayIndexFromDateInput(targetDateInput);
+    const defaultSlot = defaultTimeSlotForDay(targetDay);
     setDraft((current) => {
       const base = emptyLessonDraft(user.class_ids[0] ?? '');
       return {
         ...base,
         dateInput: targetDateInput,
         dayIndex: targetDay,
+        startTime: defaultSlot.start,
+        endTime: defaultSlot.end,
         type: 'event',
         subject: CUSTOM_SUBJECT_VALUE,
         customSubject: current.customSubject.trim() || 'Мероприятие',
@@ -2237,12 +2305,12 @@ export function TeacherScreen({
     const year = Number.parseInt(parts[1], 10);
     const month = Number.parseInt(parts[2], 10);
     const date = new Date(Date.UTC(year, month - 1, 1, 12, 0, 0));
-    return new Intl.DateTimeFormat('ru-RU', {
+    return new Intl.DateTimeFormat(uiLocale, {
       month: 'long',
       year: 'numeric',
       timeZone: 'UTC',
     }).format(date);
-  }, [homeworkDueMonthCursor]);
+  }, [homeworkDueMonthCursor, uiLocale]);
 
   const homeworkDueCalendarCells = useMemo(
     () => buildMonthDateCells(homeworkDueMonthCursor),
@@ -3407,6 +3475,7 @@ export function TeacherScreen({
 
   const setLessonDraftType = (type: LessonType) => {
     setDraft((entry) => {
+      const defaultSlot = defaultTimeSlotForDay(entry.dayIndex);
       if (type === 'holiday') {
         return {
           ...entry,
@@ -3425,8 +3494,8 @@ export function TeacherScreen({
           subject: CUSTOM_SUBJECT_VALUE,
           customSubject: entry.customSubject.trim() || 'Мероприятие',
           room: entry.room === '—' ? 'Актовый зал' : entry.room,
-          startTime: entry.startTime === '00:00' ? '08:00' : entry.startTime,
-          endTime: entry.endTime === '23:59' ? '08:45' : entry.endTime,
+          startTime: entry.startTime === '00:00' ? defaultSlot.start : entry.startTime,
+          endTime: entry.endTime === '23:59' ? defaultSlot.end : entry.endTime,
         };
       }
       const firstSubject = subjects[0] ?? '';
@@ -3436,8 +3505,8 @@ export function TeacherScreen({
         subject: entry.subject === CUSTOM_SUBJECT_VALUE ? firstSubject : entry.subject,
         customSubject: entry.subject === CUSTOM_SUBJECT_VALUE ? '' : entry.customSubject,
         room: entry.room === '—' ? 'Кабинет 1' : entry.room,
-        startTime: entry.startTime === '00:00' ? '08:00' : entry.startTime,
-        endTime: entry.endTime === '23:59' ? '08:45' : entry.endTime,
+        startTime: entry.startTime === '00:00' ? defaultSlot.start : entry.startTime,
+        endTime: entry.endTime === '23:59' ? defaultSlot.end : entry.endTime,
       };
     });
   };
@@ -3792,21 +3861,26 @@ export function TeacherScreen({
       return className(snapshot, entry.class_ids[0] ?? '', language);
     }
     if (entry.role_id === 1) {
-      return 'Директор';
+      return t(language, { ru: 'Директор', en: 'Director', he: 'מנהל/ת' });
     }
     if (entry.role_id === 3) {
-      return 'Учитель';
+      return t(language, { ru: 'Учитель', en: 'Teacher', he: 'מורה' });
     }
     if (entry.role_id === 6) {
-      return 'Сотрудник';
+      return t(language, { ru: 'Сотрудник', en: 'Staff', he: 'צוות' });
     }
     if (entry.role_id === 7) {
-      return 'Администратор';
+      return t(language, { ru: 'Администратор', en: 'Administrator', he: 'אדמין' });
     }
-    return 'Пользователь';
+    return t(language, { ru: 'Пользователь', en: 'User', he: 'משתמש/ת' });
   };
 
-  const birthdaySuggestedGreeting = (entry: User): string => `С днём рождения, ${entry.name}! 🎉`;
+  const birthdaySuggestedGreeting = (entry: User): string =>
+    t(language, {
+      ru: `С днём рождения, ${entry.name}! 🎉`,
+      en: `Happy birthday, ${entry.name}! 🎉`,
+      he: `יום הולדת שמח, ${entry.name}! 🎉`,
+    });
 
   const openBirthdayGreetingModal = (entry: User) => {
     if (entry.id === user.id) {
@@ -3824,7 +3898,14 @@ export function TeacherScreen({
     }
     const text = birthdayGreetingDraft.trim();
     if (!text) {
-      Alert.alert('Пустое сообщение', 'Введите текст поздравления.');
+      Alert.alert(
+        t(language, { ru: 'Пустое сообщение', en: 'Empty message', he: 'הודעה ריקה' }),
+        t(language, {
+          ru: 'Введите текст поздравления.',
+          en: 'Enter a greeting message.',
+          he: 'הכנס/י טקסט ברכה.',
+        }),
+      );
       return;
     }
     setBirthdaySendingId(birthdayGreetingTarget.id);
@@ -3844,9 +3925,16 @@ export function TeacherScreen({
       setBirthdayGreetingVisible(false);
       setBirthdayGreetingTarget(null);
       setBirthdayGreetingDraft('');
-      Alert.alert('Отправлено', `Поздравление для ${birthdayGreetingTarget.name} отправлено.`);
+      Alert.alert(
+        t(language, { ru: 'Отправлено', en: 'Sent', he: 'נשלח' }),
+        t(language, {
+          ru: `Поздравление для ${birthdayGreetingTarget.name} отправлено.`,
+          en: `Greeting sent to ${birthdayGreetingTarget.name}.`,
+          he: `הברכה נשלחה אל ${birthdayGreetingTarget.name}.`,
+        }),
+      );
     } catch (error) {
-      Alert.alert('Ошибка', (error as Error).message);
+      Alert.alert(t(language, { ru: 'Ошибка', en: 'Error', he: 'שגיאה' }), (error as Error).message);
     } finally {
       setBirthdaySendingId(null);
     }
@@ -3855,21 +3943,24 @@ export function TeacherScreen({
   const renderSchedule = () => (
     <>
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Расписание</Text>
+        <Text style={styles.sectionTitle}>{t(language, { ru: 'Расписание', en: 'Schedule', he: 'מערכת' })}</Text>
         <View style={styles.scheduleHeaderActions}>
           <Pressable style={styles.calendarButton} onPress={openRangePicker}>
             <Ionicons name={calendarExpanded ? 'calendar' : 'calendar-outline'} size={16} color="#fff" />
           </Pressable>
           <Pressable style={styles.addLessonButton} onPress={openNewLessonModal}>
             <Ionicons name="add" size={16} color="#fff" />
-            <Text style={styles.addLessonButtonText}>Добавить запись</Text>
+            <Text style={styles.addLessonButtonText}>
+              {t(language, { ru: 'Добавить запись', en: 'Add entry', he: 'הוספת רשומה' })}
+            </Text>
           </Pressable>
         </View>
       </View>
 
       <View style={styles.rangeInfoCard}>
         <Text style={styles.rangeInfoText}>
-          Показано: {dateShortLabel(visibleRange.startInput)} — {dateShortLabel(visibleRange.endInput)}
+          {t(language, { ru: 'Показано', en: 'Shown', he: 'מוצג' })}:{' '}
+          {dateShortLabel(visibleRange.startInput, uiLocale)} — {dateShortLabel(visibleRange.endInput, uiLocale)}
         </Text>
       </View>
 
@@ -3885,11 +3976,17 @@ export function TeacherScreen({
           }}
         >
           <Ionicons name="chevron-back" size={16} color={COLORS.textMain} />
-          <Text style={styles.weekNavButtonText}>{calendarExpanded ? 'Месяц назад' : 'Неделя назад'}</Text>
+          <Text style={styles.weekNavButtonText}>
+            {calendarExpanded
+              ? t(language, { ru: 'Месяц назад', en: 'Previous month', he: 'חודש קודם' })
+              : t(language, { ru: 'Неделя назад', en: 'Previous week', he: 'שבוע קודם' })}
+          </Text>
         </Pressable>
 
         <Text style={styles.weekNavCenterText}>
-          {calendarExpanded ? scheduleMonthLabel : `Неделя ${dateInputLabel(visibleRange.startInput)}`}
+          {calendarExpanded
+            ? scheduleMonthLabel
+            : `${t(language, { ru: 'Неделя', en: 'Week', he: 'שבוע' })} ${dateInputLabel(visibleRange.startInput)}`}
         </Text>
 
         <Pressable
@@ -3902,7 +3999,11 @@ export function TeacherScreen({
             }
           }}
         >
-          <Text style={styles.weekNavButtonText}>{calendarExpanded ? 'Вперед' : 'След. неделя'}</Text>
+          <Text style={styles.weekNavButtonText}>
+            {calendarExpanded
+              ? t(language, { ru: 'Вперед', en: 'Next month', he: 'חודש הבא' })
+              : t(language, { ru: 'След. неделя', en: 'Next week', he: 'השבוע הבא' })}
+          </Text>
           <Ionicons name="chevron-forward" size={16} color={COLORS.textMain} />
         </Pressable>
       </View>
@@ -3930,7 +4031,7 @@ export function TeacherScreen({
                     selected && styles.dayChipTextActive,
                   ]}
                 >
-                  {DAY_CHIPS[dayIndex].label}
+                  {weekdayShortLabels[dayIndex]}
                 </Text>
                 <Text style={[styles.dayChipDateText, selected && styles.dayChipDateTextActive]}>
                   {Number.parseInt(dateInput.slice(8, 10), 10)}
@@ -3971,7 +4072,7 @@ export function TeacherScreen({
           <View style={styles.monthCalendarWeekdaysRow}>
             {DAY_CHIPS.map((day) => (
               <Text key={`weekday_${day.index}`} style={styles.monthCalendarWeekdayText}>
-                {day.label}
+                {weekdayShortLabels[day.index]}
               </Text>
             ))}
           </View>
@@ -4044,33 +4145,48 @@ export function TeacherScreen({
 
       {calendarExpanded ? (
         <View style={styles.calendarLegendRow}>
-          <Text style={styles.calendarLegendItem}>🎂 ДР</Text>
-          <Text style={styles.calendarLegendItem}>🍂 Каникулы</Text>
-          <Text style={styles.calendarLegendItem}>🏖️ Выходной</Text>
-          <Text style={styles.calendarLegendItem}>🔢 Уроки</Text>
+          <Text style={styles.calendarLegendItem}>
+            🎂 {t(language, { ru: 'ДР', en: 'DOB', he: 'יום הולדת' })}
+          </Text>
+          <Text style={styles.calendarLegendItem}>
+            🍂 {t(language, { ru: 'Каникулы', en: 'Holiday', he: 'חופשה' })}
+          </Text>
+          <Text style={styles.calendarLegendItem}>
+            🏖️ {t(language, { ru: 'Выходной', en: 'Day off', he: 'יום חופשי' })}
+          </Text>
+          <Text style={styles.calendarLegendItem}>
+            🔢 {t(language, { ru: 'Уроки', en: 'Lessons', he: 'שיעורים' })}
+          </Text>
         </View>
       ) : null}
 
       <View style={styles.selectedDayMetaCard}>
         <Text style={styles.selectedDayMetaTitle}>
-          {dateShortLabel(selectedDayDateInput)} • {DAY_CHIPS[dayIndexFromDateInput(selectedDayDateInput)].label}
+          {dateShortLabel(selectedDayDateInput, uiLocale)} • {weekdayShortLabels[dayIndexFromDateInput(selectedDayDateInput)]}
         </Text>
         <Text style={styles.selectedDayMetaText}>
-          Уроков: {scheduleDayStatsByDate.get(selectedDayDateInput)?.lessons ?? 0} · Мероприятий:{' '}
+          {t(language, { ru: 'Уроков', en: 'Lessons', he: 'שיעורים' })}:{' '}
+          {scheduleDayStatsByDate.get(selectedDayDateInput)?.lessons ?? 0} ·{' '}
+          {t(language, { ru: 'Мероприятий', en: 'Events', he: 'אירועים' })}:{' '}
           {scheduleDayStatsByDate.get(selectedDayDateInput)?.events ?? 0}
         </Text>
         {customHolidayByDate.get(selectedDayDateInput) ? (
           <Text style={styles.selectedDayHolidayText}>🏖️ {customHolidayByDate.get(selectedDayDateInput)}</Text>
         ) : schoolCalendarRangeForDate(selectedDayDateInput) ? (
           <Text style={styles.selectedDayHolidayText}>
-            {schoolCalendarRangeForDate(selectedDayDateInput)?.icon} {schoolCalendarRangeForDate(selectedDayDateInput)?.label}
+            {schoolCalendarRangeForDate(selectedDayDateInput)?.icon}{' '}
+            {schoolCalendarRangeForDate(selectedDayDateInput)
+              ? schoolRangeLabel(schoolCalendarRangeForDate(selectedDayDateInput)!, language)
+              : ''}
           </Text>
         ) : null}
       </View>
 
       {selectedDayBirthdays.length > 0 ? (
         <View style={styles.birthdayPanel}>
-          <Text style={styles.birthdayPanelTitle}>Сегодня праздник!</Text>
+          <Text style={styles.birthdayPanelTitle}>
+            {t(language, { ru: 'Сегодня праздник!', en: 'Celebration today!', he: 'היום חגיגה!' })}
+          </Text>
           {selectedDayBirthdays.map((entry) => {
             const congratulated = birthdayCongratulatedIds.includes(entry.id);
             const sentText = birthdayGreetingByUserId[entry.id];
@@ -4085,7 +4201,7 @@ export function TeacherScreen({
                     </View>
                   )}
                   <View>
-                    <Text style={styles.birthdayName}>{entry.name}</Text>
+                    <Text style={styles.birthdayName}>{localizePersonName(entry.name, language)}</Text>
                     <Text style={styles.birthdayMeta}>{birthdayRoleText(entry)}</Text>
                     {congratulated && sentText ? (
                       <Text style={styles.birthdaySentPreview} numberOfLines={1}>
@@ -4105,10 +4221,10 @@ export function TeacherScreen({
                 >
                   <Text style={styles.birthdayActionText}>
                     {birthdaySendingId === entry.id
-                      ? 'Отправка...'
+                      ? t(language, { ru: 'Отправка...', en: 'Sending...', he: 'שולח...' })
                       : congratulated
-                        ? 'Вы поздравили'
-                        : 'Поздравить'}
+                        ? t(language, { ru: 'Вы поздравили', en: 'You congratulated', he: 'בירכת' })
+                        : t(language, { ru: 'Поздравить', en: 'Congratulate', he: 'לברך' })}
                   </Text>
                 </Pressable>
               </View>
@@ -4121,7 +4237,13 @@ export function TeacherScreen({
         {selectedDayLessons.length === 0 ? (
           <View style={styles.emptyBlock}>
             <Ionicons name="calendar-outline" size={24} color={COLORS.textMuted} />
-            <Text style={styles.emptyText}>На этот день уроки не запланированы</Text>
+            <Text style={styles.emptyText}>
+              {t(language, {
+                ru: 'На этот день уроки не запланированы',
+                en: 'No lessons scheduled for this day',
+                he: 'לא מתוכננים שיעורים ליום זה',
+              })}
+            </Text>
           </View>
         ) : (
           selectedDayLessons.map((lesson, index) => renderLessonCard(lesson, index, true))
@@ -4129,12 +4251,20 @@ export function TeacherScreen({
       </View>
 
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>ДЗ к дате</Text>
+        <Text style={styles.sectionTitle}>
+          {t(language, { ru: 'ДЗ к дате', en: 'Homework by date', he: 'שיעורי בית לפי תאריך' })}
+        </Text>
       </View>
       <View style={styles.lessonsListContainer}>
         {homeworkDueForSelectedDate.length === 0 ? (
           <View style={styles.emptyBlock}>
-            <Text style={styles.emptyText}>Нет дедлайнов на эту дату</Text>
+            <Text style={styles.emptyText}>
+              {t(language, {
+                ru: 'Нет дедлайнов на эту дату',
+                en: 'No deadlines for this date',
+                he: 'אין מועדי הגשה לתאריך זה',
+              })}
+            </Text>
           </View>
         ) : (
           homeworkDueForSelectedDate.map((item) => {
@@ -4150,7 +4280,9 @@ export function TeacherScreen({
                   openHomeworkModalForLesson(lesson, item.id);
                 }}
               >
-                <Text style={styles.taskTitle}>{lesson?.subject ?? 'Урок'}</Text>
+                <Text style={styles.taskTitle}>
+                  {lesson ? lessonDisplaySubject(lesson) : t(language, { ru: 'Урок', en: 'Lesson', he: 'שיעור' })}
+                </Text>
                 <Text style={styles.taskMeta}>
                   {t(language, { ru: 'Класс', en: 'Class', he: 'כיתה' })}:{' '}
                   {lesson ? className(snapshot, lesson.class_id, language) : item.class_id}
@@ -4770,12 +4902,12 @@ export function TeacherScreen({
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>
                 {draft.lessonId
-                  ? 'Редактировать запись'
+                  ? t(language, { ru: 'Редактировать запись', en: 'Edit entry', he: 'עריכת רשומה' })
                   : draft.type === 'event'
-                    ? 'Добавить мероприятие'
+                    ? t(language, { ru: 'Добавить мероприятие', en: 'Add event', he: 'הוספת אירוע' })
                     : draft.type === 'holiday'
-                      ? 'Добавить выходной'
-                      : 'Добавить урок'}
+                      ? t(language, { ru: 'Добавить выходной', en: 'Add day off', he: 'הוספת יום חופשי' })
+                      : t(language, { ru: 'Добавить урок', en: 'Add lesson', he: 'הוספת שיעור' })}
               </Text>
               <Pressable onPress={() => setAddLessonVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORS.textMain} />
@@ -4783,38 +4915,45 @@ export function TeacherScreen({
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalSectionTitle}>День недели</Text>
+              <Text style={styles.modalSectionTitle}>{t(language, { ru: 'День недели', en: 'Week day', he: 'יום בשבוע' })}</Text>
               <View style={styles.chipsWrap}>
                 {DAY_CHIPS.map((day) => (
                   <Pressable
                     key={`draft_day_${day.index}`}
                     style={[styles.optionChip, draft.dayIndex === day.index && styles.optionChipActive]}
                     onPress={() =>
-                      setDraft((entry) => ({
-                        ...entry,
-                        dayIndex: day.index,
-                        dateInput: dateInputForDayInSameWeek(entry.dateInput, day.index),
-                      }))
+                      setDraft((entry) => {
+                        const defaultSlot = defaultTimeSlotForDay(day.index);
+                        return {
+                          ...entry,
+                          dayIndex: day.index,
+                          dateInput: dateInputForDayInSameWeek(entry.dateInput, day.index),
+                          startTime: entry.type === 'holiday' ? entry.startTime : defaultSlot.start,
+                          endTime: entry.type === 'holiday' ? entry.endTime : defaultSlot.end,
+                        };
+                      })
                     }
                   >
                     <Text
                       style={[styles.optionChipText, draft.dayIndex === day.index && styles.optionChipTextActive]}
                     >
-                      {day.label}
+                      {weekdayShortLabels[day.index]}
                     </Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.profileInfoSub}>Дата: {dateShortLabel(draft.dateInput)}</Text>
+              <Text style={styles.profileInfoSub}>
+                {t(language, { ru: 'Дата', en: 'Date', he: 'תאריך' })}: {dateShortLabel(draft.dateInput, uiLocale)}
+              </Text>
 
-              <Text style={styles.modalSectionTitle}>Тип записи</Text>
+              <Text style={styles.modalSectionTitle}>{t(language, { ru: 'Тип записи', en: 'Entry type', he: 'סוג רשומה' })}</Text>
               <View style={styles.chipsWrap}>
                 <Pressable
                   style={[styles.optionChip, draft.type === 'lesson' && styles.optionChipActive]}
                   onPress={() => setLessonDraftType('lesson')}
                 >
                   <Text style={[styles.optionChipText, draft.type === 'lesson' && styles.optionChipTextActive]}>
-                    Урок
+                    {t(language, { ru: 'Урок', en: 'Lesson', he: 'שיעור' })}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -4822,7 +4961,7 @@ export function TeacherScreen({
                   onPress={() => setLessonDraftType('event')}
                 >
                   <Text style={[styles.optionChipText, draft.type === 'event' && styles.optionChipTextActive]}>
-                    Мероприятие
+                    {t(language, { ru: 'Мероприятие', en: 'Event', he: 'אירוע' })}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -4830,40 +4969,56 @@ export function TeacherScreen({
                   onPress={() => setLessonDraftType('holiday')}
                 >
                   <Text style={[styles.optionChipText, draft.type === 'holiday' && styles.optionChipTextActive]}>
-                    Выходной
+                    {t(language, { ru: 'Выходной', en: 'Day off', he: 'יום חופשי' })}
                   </Text>
                 </Pressable>
               </View>
 
               {draft.type !== 'holiday' ? (
                 <>
-                  <Text style={styles.modalSectionTitle}>Время</Text>
-                  <View style={styles.timeSlotsGrid}>
-                    {TIME_SLOT_OPTIONS.map((slot) => {
-                      const selected = draft.startTime === slot.start && draft.endTime === slot.end;
-                      return (
-                        <Pressable
-                          key={slot.label}
-                          style={[styles.timeSlotChip, selected && styles.timeSlotChipActive]}
-                          onPress={() =>
-                            setDraft((entry) => ({ ...entry, startTime: slot.start, endTime: slot.end }))
-                          }
-                        >
-                          <Text style={[styles.timeSlotText, selected && styles.timeSlotTextActive]}>
-                            {slot.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                  <Text style={styles.modalSectionTitle}>{t(language, { ru: 'Время', en: 'Time', he: 'שעה' })}</Text>
+                  {draftTimeSlotOptions.length === 0 ? (
+                    <Text style={styles.profileInfoSub}>
+                      {t(language, {
+                        ru: 'Для этого дня слоты не заданы администратором.',
+                        en: 'No slots set by administrator for this day.',
+                        he: 'ליום זה לא הוגדרו חלונות זמן על ידי המנהל.',
+                      })}
+                    </Text>
+                  ) : (
+                    <View style={styles.timeSlotsGrid}>
+                      {draftTimeSlotOptions.map((slot) => {
+                        const selected = draft.startTime === slot.start && draft.endTime === slot.end;
+                        return (
+                          <Pressable
+                            key={slot.label}
+                            style={[styles.timeSlotChip, selected && styles.timeSlotChipActive]}
+                            onPress={() =>
+                              setDraft((entry) => ({ ...entry, startTime: slot.start, endTime: slot.end }))
+                            }
+                          >
+                            <Text style={[styles.timeSlotText, selected && styles.timeSlotTextActive]}>
+                              {slot.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
                 </>
               ) : (
-                <Text style={styles.profileInfoSub}>Для выходного день сохраняется как запись на весь день.</Text>
+                <Text style={styles.profileInfoSub}>
+                  {t(language, {
+                    ru: 'Для выходного день сохраняется как запись на весь день.',
+                    en: 'For a day off, the record is saved for the whole day.',
+                    he: 'עבור יום חופשי הרשומה נשמרת לכל היום.',
+                  })}
+                </Text>
               )}
 
               {draft.type === 'lesson' ? (
                 <>
-                  <Text style={styles.modalSectionTitle}>Предмет</Text>
+                  <Text style={styles.modalSectionTitle}>{t(language, { ru: 'Предмет', en: 'Subject', he: 'מקצוע' })}</Text>
                   <View style={styles.chipsWrap}>
                     {subjects.map((subject) => {
                       const selected = draft.subject === subject;
@@ -4879,7 +5034,7 @@ export function TeacherScreen({
                           }
                         >
                           <Text style={[styles.optionChipText, selected && styles.optionChipTextActive]}>
-                            {subject}
+                            {localizeSubjectName(subject)}
                           </Text>
                         </Pressable>
                       );
@@ -4900,14 +5055,14 @@ export function TeacherScreen({
                           draft.subject === CUSTOM_SUBJECT_VALUE && styles.optionChipTextActive,
                         ]}
                       >
-                        Другое
+                        {t(language, { ru: 'Другое', en: 'Other', he: 'אחר' })}
                       </Text>
                     </Pressable>
                   </View>
                 </>
               ) : null}
 
-              <Text style={styles.modalSectionTitle}>Класс</Text>
+              <Text style={styles.modalSectionTitle}>{t(language, { ru: 'Класс', en: 'Class', he: 'כיתה' })}</Text>
               <View style={styles.chipsWrap}>
                 {snapshot.classes
                   .filter((entry) => user.class_ids.includes(entry.id))
@@ -4925,7 +5080,7 @@ export function TeacherScreen({
                             selected && styles.optionChipGreenTextActive,
                           ]}
                         >
-                          {classModel.name}
+                          {className(snapshot, classModel.id, language)}
                         </Text>
                       </Pressable>
                     );
@@ -4937,7 +5092,11 @@ export function TeacherScreen({
                   <TextInput
                     value={draft.customSubject}
                     onChangeText={(value) => setDraft((entry) => ({ ...entry, customSubject: value }))}
-                    placeholder={draft.type === 'holiday' ? 'Название выходного/каникул' : 'Введите наименование'}
+                    placeholder={
+                      draft.type === 'holiday'
+                        ? t(language, { ru: 'Название выходного/каникул', en: 'Day off/holiday title', he: 'שם יום חופשי/חופשה' })
+                        : t(language, { ru: 'Введите наименование', en: 'Enter title', he: 'הזן/י כותרת' })
+                    }
                     style={styles.modalInput}
                   />
                 ) : null}
@@ -4945,7 +5104,15 @@ export function TeacherScreen({
                   <TextInput
                     value={draft.room}
                     onChangeText={(value) => setDraft((entry) => ({ ...entry, room: value }))}
-                    placeholder={draft.type === 'event' ? 'Место проведения' : 'Кабинет (по умолчанию Кабинет 1)'}
+                    placeholder={
+                      draft.type === 'event'
+                        ? t(language, { ru: 'Место проведения', en: 'Location', he: 'מיקום' })
+                        : t(language, {
+                            ru: 'Кабинет (по умолчанию Кабинет 1)',
+                            en: 'Room (default Room 1)',
+                            he: 'חדר (ברירת מחדל חדר 1)',
+                          })
+                    }
                     style={styles.modalInput}
                   />
                 ) : null}
@@ -4955,12 +5122,12 @@ export function TeacherScreen({
             <Pressable style={styles.submitPrimaryButton} onPress={() => void saveLesson()}>
               <Text style={styles.submitPrimaryButtonText}>
                 {draft.lessonId
-                  ? 'Сохранить запись'
+                  ? t(language, { ru: 'Сохранить запись', en: 'Save entry', he: 'שמור רשומה' })
                   : draft.type === 'event'
-                    ? 'Добавить мероприятие'
+                    ? t(language, { ru: 'Добавить мероприятие', en: 'Add event', he: 'הוספת אירוע' })
                     : draft.type === 'holiday'
-                      ? 'Добавить выходной'
-                      : 'Добавить урок'}
+                      ? t(language, { ru: 'Добавить выходной', en: 'Add day off', he: 'הוספת יום חופשי' })
+                      : t(language, { ru: 'Добавить урок', en: 'Add lesson', he: 'הוספת שיעור' })}
               </Text>
             </Pressable>
           </View>
@@ -6029,7 +6196,9 @@ export function TeacherScreen({
         <View style={styles.modalBackdropCentered}>
           <View style={styles.rangeModal}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Выберите месяц</Text>
+              <Text style={styles.modalTitle}>
+                {t(language, { ru: 'Выберите месяц', en: 'Select month', he: 'בחר/י חודש' })}
+              </Text>
               <Pressable onPress={() => setMonthPickerVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORS.textMain} />
               </Pressable>
@@ -6039,6 +6208,7 @@ export function TeacherScreen({
                 const monthValue = index + 1;
                 const monthText = monthNameFromCursor(
                   `${String(scheduleYearValue).padStart(4, '0')}-${String(monthValue).padStart(2, '0')}`,
+                  uiLocale,
                 );
                 const active = scheduleMonthCursor.endsWith(`-${String(monthValue).padStart(2, '0')}`);
                 return (
@@ -6069,7 +6239,9 @@ export function TeacherScreen({
         <View style={styles.modalBackdropCentered}>
           <View style={styles.rangeModal}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Выберите год</Text>
+              <Text style={styles.modalTitle}>
+                {t(language, { ru: 'Выберите год', en: 'Select year', he: 'בחר/י שנה' })}
+              </Text>
               <Pressable onPress={() => setYearPickerVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORS.textMain} />
               </Pressable>
@@ -6127,7 +6299,9 @@ export function TeacherScreen({
 
             {birthdayGreetingTarget ? (
               <>
-                <Text style={styles.replyToText}>Кому: {birthdayGreetingTarget.name}</Text>
+                <Text style={styles.replyToText}>
+                  {t(language, { ru: 'Кому', en: 'To', he: 'למי' })}: {localizePersonName(birthdayGreetingTarget.name, language)}
+                </Text>
                 <TextInput
                   value={birthdayGreetingDraft}
                   onChangeText={setBirthdayGreetingDraft}
@@ -6143,10 +6317,10 @@ export function TeacherScreen({
                 >
                   <Text style={styles.submitPrimaryButtonText}>
                     {birthdaySendingId === birthdayGreetingTarget.id
-                      ? 'Отправка...'
+                      ? t(language, { ru: 'Отправка...', en: 'Sending...', he: 'שולח...' })
                       : birthdayCongratulatedIds.includes(birthdayGreetingTarget.id)
-                        ? 'Сохранить изменения'
-                        : 'Поздравить'}
+                        ? t(language, { ru: 'Сохранить изменения', en: 'Save changes', he: 'שמור שינויים' })
+                        : t(language, { ru: 'Поздравить', en: 'Congratulate', he: 'לברך' })}
                   </Text>
                 </Pressable>
               </>
